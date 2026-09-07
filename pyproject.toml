@@ -26,6 +26,7 @@ benchmark = [
 custom = [
     "torch>=2.7,<3",
     "safetensors>=0.5,<1",
+    "numpy>=2,<3",
 ]
 hf = [
     "huggingface-hub>=0.34,<2",
