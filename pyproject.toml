@@ -18,6 +18,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+benchmark = [
+    "httpx>=0.28,<1",
+    "psutil>=7,<8",
+    "matplotlib>=3.10,<4",
+]
 custom = [
     "torch>=2.7,<3",
     "safetensors>=0.5,<1",
@@ -35,10 +40,19 @@ dev = [
     "pytest>=8.3,<10",
     "pytest-asyncio>=1,<2",
     "ruff>=0.11,<1",
+    "types-psutil>=7,<8",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/inference_service"]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -61,5 +75,5 @@ select = ["E", "F", "I", "UP", "B", "ASYNC"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["src", "tests", "training"]
+files = ["src", "tests", "training", "benchmarks"]
 plugins = ["pydantic.mypy"]

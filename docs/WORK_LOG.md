@@ -363,3 +363,25 @@ passed** (5 custom, 6 Hugging Face), Ruff lint/format passed, and strict mypy pa
 over 36 source/test/training files. The Unicode parser regression fixture initially
 generated non-ASCII identifiers that legitimately deduplicated; corrected the
 fixture to unique ASCII identifiers and the regression gate passed.
+
+## 2026-09-07 — M4 experiment tooling and release checks (in progress)
+
+- Added a bounded open-loop driver with absolute intended arrivals, actual send
+  times, lag, late/capacity drops, HTTP outcomes, successful latency quantiles, and
+  per-outcome durations. Raw per-request records are compressed under ignored
+  `benchmarks/raw`; compact aggregates remain in Git.
+- Added sequential server orchestration, warmup, CPU/RSS sampling for server and
+  client, Prometheus deltas, drain checks, and code/lock/model provenance.
+- Pilots identified mixed-length padding cost for DistilBERT and client saturation
+  at the highest custom rate. Invalid client runs cannot establish server capacity.
+- Froze the 100 ms p95 / 1% unsuccessful-response target and experiment settings
+  in `configs/benchmark.json` before comparative measurements.
+- Added a non-root CPU Docker image and three CI jobs: offline checks, full typing
+  with custom-model preparation/tests, and container build/HTTP smoke. Linux PyTorch
+  now uses the official CPU wheel index; CUDA runtime packages were removed from
+  that platform's locked dependencies. macOS PyTorch remains 2.14.0.
+- Driver tests verify absolute arrivals, burst counts, error retention, bounded
+  outstanding requests, and explicit client-invalid results.
+
+Status: measurements, CI execution, charts, clean-checkout verification, and final
+report are still pending; this section does not mark M4 complete.

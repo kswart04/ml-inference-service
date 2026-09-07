@@ -1,0 +1,21 @@
+{
+  "device": "cpu",
+  "torch_threads": 2,
+  "torch_interop_threads": 1,
+  "batch_size": 8,
+  "window_ms": 5,
+  "pending_capacity": 32,
+  "server_deadline_seconds": 2,
+  "client_timeout_seconds": 5,
+  "max_outstanding": 256,
+  "steady_duration_seconds": 60,
+  "steady_repetitions": 3,
+  "huggingface_rates": [20, 80, 160],
+  "custom_rates": [200, 800, 1600],
+  "burst_duration_seconds": 15,
+  "burst_repetitions": 3,
+  "target_p95_seconds": 0.1,
+  "target_unsuccessful_fraction": 0.01,
+  "client_validity_p99_lag_seconds": 0.02,
+  "note": "Frozen after pilots, before comparative runs. Invalid client runs cannot establish server capacity."
+}
