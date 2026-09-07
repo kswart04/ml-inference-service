@@ -1,0 +1,33 @@
+# Python environments and tooling
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+.uv-cache/
+
+# Secrets, local configuration, and editor state
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.DS_Store
+.idea/
+.vscode/
+
+# Downloaded data, weights, caches, and bulky experiment output
+artifacts/
+data/
+.cache/
+*.pt
+*.pth
+*.safetensors
+benchmarks/raw/
+
