@@ -127,3 +127,81 @@ deadlines, cancellation, shutdown/watchdog behavior, metrics, structured logs, a
 the applicable concurrency acceptance tests. Real adapters, training, benchmarks,
 Docker, CI, and final release documentation remain incomplete. No throughput or
 model-quality claims have been made.
+
+## 2026-09-06 — M1 scheduler and execution ownership
+
+**Purpose:** add dynamic batching without introducing an unbounded executor backlog.
+
+- Added request envelopes and explicit pending/running/terminal lifecycle states.
+- Added one per-model FIFO pending deque, atomic admission, three policies, and
+  oldest-item timed collection.
+- Added one scheduler driver and one dedicated execution thread. The driver awaits
+  each active batch before submitting another.
+- Moved adapter load, prediction, and ordinary close off the event loop.
+- Added ordered result-count validation and event-loop-only future resolution.
+
+**Verification:** scheduler tests T01–T09 prove correlation, full/partial dispatch,
+busy-worker window behavior, atomic capacity, pending cleanup, retained execution
+slots after running timeout, version isolation, and batch-wide error resolution.
+
+## 2026-09-06 — M1 deadlines, overload, shutdown, and readiness
+
+**Purpose:** give every accepted or rejected request a bounded, explicit outcome.
+
+- Starts deadlines in raw-request middleware before body parsing and uses monotonic
+  time for every duration.
+- Added 429 overload responses with configurable `Retry-After`, 504 deadlines, and
+  503 responses for draining or unavailable workers.
+- Added disconnect polling that cancels the scheduler waiter. Pending tombstones are
+  reclaimed; running work retains its execution slot.
+- Added graceful draining, bounded remaining-waiter failure, fatal-worker signaling,
+  and a watchdog that marks an overlong call unready.
+- Queue fullness deliberately leaves readiness true.
+
+**Verification:** T10 proves blocked worker inference does not block liveness or the
+HTTP deadline. T11 proves shutdown refuses new work and bounds an active waiter.
+T14 covers loading/draining plus watchdog and fatal-worker readiness. T15 runs five
+success/cancellation/expiry waves without pending growth or an active batch leak.
+The overload API test fills one running plus one pending slot, verifies the next
+request gets 429 and `Retry-After: 1`, and confirms readiness remains 200.
+
+## 2026-09-06 — M1 observability
+
+**Purpose:** expose request, queue, batch, latency, and failure behavior without
+unbounded labels or raw input.
+
+- Added per-app Prometheus collectors for admission decisions, terminal outcomes,
+  pending depth, active batches, actual batch size, server duration, queue wait,
+  adapter execution duration, phase timing families, and execution failures.
+- Added JSON logs with a fixed safe field set for lifecycle, errors, and shutdown.
+- Added local `GET /metrics` and tests for its Prometheus output.
+
+**Limitation:** the fake adapter has no meaningful preprocessing/forward/postprocess
+phases. Preprocessing and postprocessing collectors have no observations until M2
+defines real adapter phase timing. `inference_forward_duration_seconds` currently
+measures the complete blocking fake adapter call and is named for the real-adapter
+contract that follows.
+
+## M1 completion status
+
+**M1 gate: passed locally.** Verification environment: macOS on Apple Silicon,
+uv 0.12.10, Python 3.12.14.
+
+| Check | Result |
+| --- | --- |
+| `uv sync --locked` in a fresh temporary copy | Passed; 32 packages resolved |
+| `uv run ruff check .` | Passed |
+| `uv run ruff format --check .` | Passed; 30 files |
+| `uv run mypy` | Passed; 24 source files |
+| `uv run pytest` | 48 passed in 0.92 seconds; 2 upstream warnings |
+| Four simultaneous real HTTP predictions | 4 correct correlated responses |
+| Prometheus batch observation | one dispatched batch, size sum 4 |
+| Uvicorn Ctrl-C shutdown | draining and stopped events; clean process exit |
+
+The HTTP smoke used the timed policy with a 100 ms collection window solely to
+make the batch easy to observe. It is a functional demonstration, not a benchmark.
+No throughput or latency claim is derived from it.
+
+The two existing upstream TestClient/AnyIO deprecation warnings remain visible and
+do not fail tests. Real adapters, training, benchmarks, Docker, CI, and portfolio
+release work remain later milestones.

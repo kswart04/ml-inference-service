@@ -3,8 +3,8 @@
 An educational text classification backend with a custom batching scheduler
 planned across incremental milestones. See [the requirements](docs/REQUIREMENTS.md).
 
-**Current milestone: M0 foundation.** The API runs a deterministic fake adapter.
-There is no dynamic batching, trained model, or measured performance result yet.
+**Current milestone: M1.** The API runs a deterministic fake adapter through the
+custom bounded scheduler. There is no trained model or measured performance result yet.
 
 ## Development setup
 
@@ -44,21 +44,31 @@ describes the exact rule and tie handling.
 | `INFERENCE_ADAPTER` | `fake` | Only adapter currently accepted |
 | `INFERENCE_MAX_BODY_BYTES` | `32768` | Per-request HTTP body cap before JSON parsing |
 | `INFERENCE_MAX_TEXT_CHARACTERS` | `8000` | Text character cap before prediction |
+| `INFERENCE_SCHEDULING_POLICY` | `timed` | `single`, `immediate`, or `timed` |
+| `INFERENCE_MAX_BATCH_SIZE` | `8` | Maximum items dispatched together |
+| `INFERENCE_MAX_COLLECTION_DELAY_MS` | `10` | Timed policy's oldest-item window |
+| `INFERENCE_PENDING_CAPACITY` | `128` | Waiting items per configured model |
+| `INFERENCE_REQUEST_DEADLINE_MS` | `5000` | Handler-entry to terminal deadline |
+| `INFERENCE_GRACEFUL_SHUTDOWN_SECONDS` | `10` | Drain allowance |
+| `INFERENCE_WORKER_WATCHDOG_SECONDS` | `30` | Running-batch stuck threshold |
+| `INFERENCE_RETRY_AFTER_SECONDS` | `1` | `Retry-After` value for queue overload |
 
 Numeric limits must be positive integers. Settings load at application creation;
 invalid settings fail startup. The app does not automatically load a `.env` file.
 Requests require both `model_id` and `model_version`; the configured identity is
 `fake-sentiment/v1`.
 
-M0 implements safe errors for oversized bodies (413), invalid input (422), unknown
-models/versions (404), unavailable startup/shutdown state (503), and execution
-errors (500). Responses carry `X-Request-ID`; prediction/error bodies include the
-same ID. No traceback or submitted text is returned in error details.
+The API implements safe errors for oversized bodies (413), invalid input (422),
+unknown models/versions (404), queue overload (429), unavailable workers/draining
+(503), deadlines (504), and execution errors (500). Responses carry `X-Request-ID`;
+prediction/error bodies include the same ID. No traceback or submitted text is
+returned in error details.
 
-The fake executes inline and receives one input per call. M1 will introduce the
-dedicated worker, queues, three scheduling policies, deadlines, cancellation,
-draining, watchdog, structured logs, and metrics. No `/metrics`, overload rejection
-(429), or deadline expiration (504) is claimed yet. Use one local server process.
+The event loop owns admission, queues, futures, deadlines, and terminal states. A
+single dedicated thread owns blocking adapter work, with one submitted/running
+batch. `/metrics` exposes Prometheus text locally; application logs are structured
+JSON and exclude input text. Use one local server process because multiple workers
+would create independent queues and model copies.
 
 ## Checks
 
@@ -78,7 +88,6 @@ access initially; tests run offline after dependencies are installed.
 
 | Milestone | Work remaining |
 | --- | --- |
-| M1 | Custom scheduling, bounded request lifecycle, metrics and structured logging |
 | M2 | Pinned Hugging Face artifact preparation, adapter, real parity tests |
 | M3 | CPU training, held-out evaluation, custom artifacts, reload tests |
 | M4 | Benchmarks and plots, Docker, CI, clean-checkout release verification, demo |

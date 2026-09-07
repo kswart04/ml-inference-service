@@ -1,10 +1,12 @@
+import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from starlette.exceptions import HTTPException
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 
 from inference_service.adapters.fake import FakeAdapter
 from inference_service.api.errors import ServiceError, error_response
@@ -16,35 +18,87 @@ from inference_service.api.schemas import (
     PredictRequest,
     PredictResponse,
 )
-from inference_service.core.contracts import ModelKey
+from inference_service.core.contracts import ModelKey, Prediction
+from inference_service.core.exceptions import (
+    AdapterContractError,
+    BatchExecutionError,
+    QueueFullError,
+    RequestDeadlineError,
+    SchedulerUnavailableError,
+)
+from inference_service.core.scheduler import ModelScheduler, SchedulerConfig
+from inference_service.observability.logging import configure_logging
+from inference_service.observability.metrics import ServiceMetrics
 from inference_service.runtime.config import Settings
 from inference_service.runtime.registry import ModelRegistry
 
 
+async def _await_prediction(
+    scheduler: ModelScheduler, request: Request, body: PredictRequest
+) -> Prediction:
+    prediction = asyncio.create_task(
+        scheduler.submit(request.state.request_id, body.input, started_at=request.state.started_at)
+    )
+
+    async def disconnected() -> None:
+        while not await request.is_disconnected():  # noqa: ASYNC110 - ASGI requires polling.
+            await asyncio.sleep(0.05)
+
+    disconnect = asyncio.create_task(disconnected())
+    done, _ = await asyncio.wait({prediction, disconnect}, return_when=asyncio.FIRST_COMPLETED)
+    if disconnect in done and prediction not in done:
+        prediction.cancel()
+        with suppress(asyncio.CancelledError):
+            await prediction
+        raise asyncio.CancelledError
+    disconnect.cancel()
+    return await prediction
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
-    """M0 runs only a tiny in-memory fake; real execution requires M1's worker."""
     config = settings if settings is not None else Settings()
+    if config.adapter != "fake":
+        raise ValueError("Only the configured fake adapter is supported in M1.")
     adapter = FakeAdapter(max_text_characters=config.max_text_characters)
+    if config.max_batch_size > adapter.metadata.max_batch_size:
+        raise ValueError("Configured batch size exceeds adapter maximum.")
     registry = ModelRegistry([adapter])
-    ready = False
+    metrics = ServiceMetrics()
+    logger = configure_logging()
+    scheduler = ModelScheduler(
+        adapter,
+        SchedulerConfig(
+            policy=config.scheduling_policy,
+            max_batch_size=config.max_batch_size,
+            collection_delay_seconds=config.max_collection_delay_ms / 1000,
+            pending_capacity=config.pending_capacity,
+            deadline_seconds=config.request_deadline_ms / 1000,
+            shutdown_grace_seconds=config.graceful_shutdown_seconds,
+            watchdog_seconds=config.worker_watchdog_seconds,
+        ),
+        metrics,
+        logger,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        nonlocal ready
+        await scheduler.start()
+        logger.info("service_started", extra={"policy": config.scheduling_policy.value})
         try:
-            adapter.load()
-            ready = True
             yield
         finally:
-            ready = False
-            adapter.close()
+            logger.info("service_draining")
+            await scheduler.shutdown()
+            logger.info("service_stopped")
 
     app = FastAPI(
         title="ML Inference Service",
-        version="0.1.0",
-        description="M0: deterministic fake adapter; scheduling and real models are planned.",
+        version="0.2.0",
+        description="M1: bounded lifecycle and custom batching scheduler with a fake adapter.",
         lifespan=lifespan,
     )
+    app.state.scheduler = scheduler
+    app.state.metrics = metrics
     app.add_middleware(RequestBoundaryMiddleware, max_body_bytes=config.max_body_bytes)
 
     @app.exception_handler(ServiceError)
@@ -71,6 +125,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(Exception)
     async def internal_error(request: Request, exc: Exception) -> JSONResponse:
+        logger.error("request_error", extra={"error_category": type(exc).__name__})
         return error_response(
             request.state.request_id, 500, "internal_error", "Prediction service error."
         )
@@ -81,7 +136,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/health/ready", responses={503: {"model": ErrorResponse}})
     async def readiness() -> dict[str, str]:
-        if not ready:
+        if not scheduler.ready:
             raise ServiceError(503, "unavailable", "Service is not ready.")
         return {"status": "ready"}
 
@@ -97,39 +152,58 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     labels=metadata.labels,
                     device=metadata.device,
                     max_batch_size=metadata.max_batch_size,
-                    available=ready,
+                    available=scheduler.ready,
                 )
                 for metadata in registry.models()
             ]
         )
 
+    @app.get("/metrics", include_in_schema=False)
+    async def prometheus_metrics() -> Response:
+        return Response(generate_latest(metrics.registry), media_type=CONTENT_TYPE_LATEST)
+
     @app.post(
         "/v1/predict",
-        responses={status: {"model": ErrorResponse} for status in (404, 413, 422, 500, 503)},
+        response_model=PredictResponse,
+        responses={
+            status: {"model": ErrorResponse} for status in (404, 413, 422, 429, 500, 503, 504)
+        },
     )
-    async def predict(body: PredictRequest, request: Request) -> PredictResponse:
+    async def predict(body: PredictRequest, request: Request) -> PredictResponse | JSONResponse:
         key = ModelKey(body.model_id, body.model_version)
         try:
             selected = registry.get(key)
         except KeyError:
             raise ServiceError(404, "model_not_found", "Unknown model ID or version.") from None
-        if not ready:
-            raise ServiceError(503, "unavailable", "Service is not ready.")
         try:
             selected.validate(body.input)
         except ValueError as exc:
             raise ServiceError(422, "invalid_input", str(exc)) from None
-        # Deliberately one item in M0. Replace this with scheduler submission in M1.
-        results = selected.predict_batch([body.input])
-        if len(results) != 1:
+        try:
+            result = await _await_prediction(scheduler, request, body)
+        except QueueFullError:
+            response = error_response(
+                request.state.request_id, 429, "queue_full", "Pending queue capacity reached."
+            )
+            response.headers["Retry-After"] = str(config.retry_after_seconds)
+            return response
+        except RequestDeadlineError:
+            raise ServiceError(
+                504, "deadline_exceeded", "Server request deadline exceeded."
+            ) from None
+        except SchedulerUnavailableError:
+            raise ServiceError(503, "unavailable", "Model worker is unavailable.") from None
+        except AdapterContractError:
             raise ServiceError(
                 500, "adapter_contract_error", "Adapter returned an invalid result count."
-            )
+            ) from None
+        except BatchExecutionError:
+            raise ServiceError(500, "execution_error", "Model batch execution failed.") from None
         return PredictResponse(
             request_id=request.state.request_id,
             model_id=key.model_id,
             model_version=key.model_version,
-            prediction=results[0],
+            prediction=result,
         )
 
     return app

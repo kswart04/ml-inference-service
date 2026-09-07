@@ -1,5 +1,6 @@
 """Bound raw HTTP bodies before JSON parsing and assign server request IDs."""
 
+import time
 from uuid import uuid4
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -19,6 +20,7 @@ class RequestBoundaryMiddleware:
 
         request_id = str(uuid4())
         scope.setdefault("state", {})["request_id"] = request_id
+        scope["state"]["started_at"] = time.monotonic()
         body = bytearray()
         while True:
             message = await receive()

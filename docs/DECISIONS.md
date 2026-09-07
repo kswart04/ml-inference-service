@@ -77,5 +77,44 @@ error envelopes and server-generated IDs.
 prediction attempt and must not imply retry deduplication.
 
 **Consequence:** error details deliberately omit raw submitted text and tracebacks.
-Token limits remain a separate real-adapter requirement for M2/M3. Structured
-logging, deadline timing, and global pending-capacity bounds remain M1 work.
+Token limits remain a separate real-adapter requirement for M2/M3. M1 adds
+structured logging, deadline timing, and per-model pending-capacity bounds.
+
+## D006 — One scheduler driver and one execution thread (2026-09-06)
+
+**Decision:** create one `ModelScheduler` per configured model identity. One event-loop
+driver owns batch selection and is the only code that submits to a dedicated
+single-thread executor. It awaits the active batch before submitting another.
+
+**Reason:** this makes both pending capacity and running capacity visible. A normal
+executor submission queue cannot silently become a second unbounded work queue.
+
+**Consequence:** M1 permits one active batch per scheduler. Concurrent models on a
+shared GPU remain deferred because per-model limits do not bound device-wide work.
+
+## D007 — Terminal state ownership remains on the event loop (2026-09-06)
+
+**Decision:** represent accepted requests as pending, running, succeeded, failed,
+expired, or cancelled. Worker threads return ordered values or errors; only event-loop
+code mutates envelopes and futures.
+
+**Reason:** one owner makes exactly-once terminal resolution and result correlation
+reviewable under timeout, disconnect, and batch failure races.
+
+**Consequence:** cancelling a running waiter never releases the execution slot.
+Late output is ignored. A thread blocked in native code cannot be terminated; the
+watchdog changes readiness and process restart remains the recovery mechanism.
+
+## D008 — Per-app metrics and fixed structured-log fields (2026-09-06)
+
+**Decision:** use a separate Prometheus registry for each app instance and JSON logs
+with a fixed field allowlist. Labels use configured identity, policy, and small
+decision/outcome categories.
+
+**Reason:** isolated registries make repeated app construction safe in tests and
+avoid global duplicate collectors. Fixed fields keep request IDs and raw text out
+of metric labels and keep text out of normal logs.
+
+**Consequence:** preprocessing and postprocessing collectors are declared but remain
+unobserved for the M1 fake. M2 adapters must expose reliable phase timings before
+those series carry samples.

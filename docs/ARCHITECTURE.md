@@ -1,96 +1,109 @@
 # Architecture
 
-Status: M0 foundation. The final design is specified in
-[REQUIREMENTS.md](REQUIREMENTS.md); this page distinguishes current behavior from
-the planned scheduler.
+Status: M1 scheduler and bounded lifecycle. The final design remains specified in
+[REQUIREMENTS.md](REQUIREMENTS.md).
 
 ## Package structure
 
 | Section | Location | Responsibility |
 | --- | --- | --- |
 | HTTP API | `src/inference_service/api/` | Body cap, schemas, routes, safe errors, request IDs |
-| Core contracts | `src/inference_service/core/` | Text inputs, predictions, immutable model identity and metadata |
+| Core | `src/inference_service/core/` | Contracts, envelopes, states, scheduler, admission and errors |
 | Adapters | `src/inference_service/adapters/` | Typed protocol and deterministic fake implementation |
-| Runtime | `src/inference_service/runtime/` | Validated environment configuration and fixed model registry |
-| Verification | `tests/` | API boundaries, fake behavior, registry and configuration tests |
+| Runtime | `src/inference_service/runtime/` | Validated scheduler configuration and fixed model registry |
+| Observability | `src/inference_service/observability/` | JSON logs and isolated Prometheus registry |
+| Verification | `tests/` | API boundaries, lifecycle, scheduling, overload and failures |
 
-Create scheduler, observability, training, benchmark, and artifact-preparation
-modules when their milestones implement actual behavior. Empty placeholders do
-not establish support.
+Training, benchmark, and artifact-preparation modules arrive when their milestones
+implement real behavior. Empty placeholders do not establish support.
 
-## Current request flow
+## Request flow
 
 ```mermaid
 flowchart LR
-    A[HTTP request] --> B[Server request ID and byte cap]
+    A[HTTP request] --> B[Server request ID, start time and byte cap]
     B --> C[Schema validation]
     C --> D[Exact model and version lookup]
-    D --> E[Readiness and character limit]
-    E --> F[Fake adapter with one item]
-    F --> G[Typed prediction and request ID]
+    D --> E[Character limit]
+    E --> F[Per-model scheduler admission]
+    F --> G[Policy selects compatible batch]
+    G --> H[One dedicated execution thread]
+    H --> I[Event loop correlates ordered results]
+    I --> J[Typed response with request ID]
 ```
 
-The middleware counts received bytes, including chunked requests, and rejects a
-body beyond 32 KiB before JSON parsing. This is a per-request parsing bound, not a
-global server memory or network admission bound. The character limit defaults to
-8,000 Unicode characters and is checked before prediction. Blank input is invalid.
+The middleware starts the monotonic deadline at handler entry, counts received
+bytes including chunked requests, and rejects a body beyond 32 KiB before JSON
+parsing. This is a per-request parsing bound, not a global server memory bound. The
+character limit defaults to 8,000 Unicode characters and is checked before admission.
 
-Each request gets a fresh UUID, returned in `X-Request-ID` and prediction/error
-envelopes. Client-provided IDs are not adopted. Version lookup has no `latest`
-alias, filesystem paths, URLs, or caller-selected adapters.
+Each request gets a fresh UUID in `X-Request-ID` and prediction/error envelopes.
+Client-provided IDs are not adopted. Version lookup has no `latest` alias,
+filesystem path, URL, or caller-selected adapter.
 
-## Shared contracts
+## Scheduler and execution ownership
 
-- `TextInput`: validated, immutable input with nonblank text.
-- `Prediction` and `SentimentScores`: typed binary result with bounded finite scores.
-- `ModelKey`: immutable model ID and version; currently also the compatibility key
-  because the API has no prediction options.
-- `ModelMetadata`: identity, task, input type, labels, device, and maximum batch size.
-- `ModelAdapter`: metadata, load, cheap validation, compatibility key, ordered batch
-  prediction, and close. Real adapters must implement one batched forward pass.
-- `ModelRegistry`: fixed startup mapping; duplicate identities and empty registries
-  fail construction. Different explicit versions can coexist in the contract.
+The event loop owns admission, the bounded pending deque, request envelopes,
+futures, deadlines, and terminal transitions. Admission checks capacity and appends
+under one condition lock. Pending dead entries are reclaimed before capacity checks
+and batch formation.
 
-The running application configures only `fake-sentiment/v1`. The generic registry
-contract is not a claim of concurrent multi-model execution.
+One driver task is the only code allowed to submit to a scheduler's one-thread
+executor. It awaits the active call before forming another batch, so the executor
+cannot accumulate a hidden backlog. At most `pending_capacity` waiting items plus
+one active batch of `max_batch_size` items exist per scheduler.
 
-## Fake adapter semantics
+Single dispatches one item. Immediate dispatches currently available items up to
+the limit. Timed dispatches a full batch immediately, or waits until the oldest
+item's window expires. Time spent behind an active worker counts toward that window.
+A zero timed window behaves like immediate batching.
 
-The fake splits lowercase text into ASCII letter tokens. It counts occurrences of
-`excellent`, `good`, `great`, `love`, `wonderful` against `awful`, `bad`, `hate`,
-`poor`, `terrible`. A positive balance gives a positive score of 0.8; a negative
-balance gives 0.2; a tie gives 0.5. Negative score is one minus positive score;
-ties select the positive label. These are deterministic fixtures, not learned or
-calibrated probabilities. Negation and language understanding are not implemented.
+The worker returns ordered results or an error. The event loop checks result count
+and maps each index to its original envelope. The scheduler is model-independent;
+adapter validation, preprocessing, forward execution, and result interpretation
+remain adapter responsibilities.
 
-Its batch contract permits 1–8 inputs and preserves order. The HTTP path submits
-exactly one input. There is no neural network or batched forward pass in M0.
+## Lifecycle and failure semantics
 
-## Lifecycle and readiness
+Accepted states are pending, running, succeeded, failed, expired, and cancelled.
+Each envelope reaches a terminal state once. Pending expiry or cancellation removes
+the item promptly. Running expiry/cancellation terminates its waiter while native
+execution retains the slot; late output is discarded without affecting survivors.
 
-The app factory validates settings and constructs one adapter and one registry.
-FastAPI lifespan loads the fake once on startup and closes it on shutdown.
-Readiness is true only within that lifespan. Liveness never invokes prediction.
+Recoverable batch exceptions fail every live member and leave the scheduler ready.
+A wrong output count is an adapter contract failure. An adapter can signal a fatal
+worker failure, and a watchdog marks an overlong active call unavailable. Recovery
+from either requires process restart.
 
-M0 calls the tiny, bounded, in-memory fake synchronously from the handler. This
-temporary path must not receive a slow adapter or real model. No dedicated worker,
-pending queue, request deadline, disconnect cleanup, watchdog, or bounded draining
-policy is implemented yet. Readiness therefore does not yet represent those M1
-conditions. Structured application logs and `/metrics` also arrive in M1.
+Shutdown closes admission and readiness, then drains accepted work within existing
+deadlines and the grace allowance. Remaining live waiters receive an unavailable
+outcome. Python cannot kill a native call in a thread. When grace expires with a
+call still active, shutdown abandons it and skips adapter close to avoid racing its
+resources; the process supervisor must terminate/restart the process.
 
-## Planned M1 execution ownership
+FastAPI lifespan loads and closes the adapter through its executor. Readiness
+requires open admission, a live driver, and no watchdog/fatal-worker failure. Queue
+fullness alone does not change readiness. Liveness never invokes inference.
 
-The event loop will own admission, bounded pending queues, request envelopes,
-client futures, deadlines, and terminal transitions. A dedicated executor will
-perform preprocessing and inference, with at most one submitted/running batch per
-configured adapter. Worker results will return to the event loop to resolve the
-correct client futures.
+## Model identity and fake adapter
 
-Keep expired/cancelled pending work within capacity accounting until promptly
-removed. A running timeout releases its client, not the worker slot. Timed
-collection uses the oldest pending arrival; time spent waiting for a busy worker
-must not be followed by a fresh collection window.
+The running application configures only `fake-sentiment/v1`. Scheduler instances
+are per model/version; isolated dual-version tests prove their queues and calls
+cannot mix. Concurrent multi-model service is not enabled yet.
 
-Before M2, replace the inline fake call with this scheduler and prove the relevant
-T01–T11 and T13–T15 acceptance tests. Full M1 request lifecycle guarantees are not
-claimed by the M0 tests.
+The fake splits lowercase text into ASCII letter tokens and counts a documented
+positive/negative word set. It returns fixed scores 0.8, 0.2, or 0.5. These are test
+fixtures, not learned or calibrated probabilities. Its batch contract preserves
+order for 1–8 inputs. Because there is no neural network, M1 proves batching
+mechanics rather than a real batched forward pass.
+
+## Observability
+
+JSON logs contain timestamp, event, request ID where relevant, configured model,
+version, policy, outcome, and bounded error category. Raw input text is never logged.
+
+Prometheus metrics label only configured identity, policy, and small decision,
+outcome, or failure categories. Metrics cover admission/rejection, terminal states,
+pending depth, active batches, actual batch size, request duration, queue wait,
+execution duration, and failures. Preprocessing and postprocessing metric families
+exist but have no samples until real adapters provide separate phase timings in M2.

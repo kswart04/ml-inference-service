@@ -1,3 +1,5 @@
+import asyncio
+import threading
 from collections.abc import AsyncIterator, Sequence
 from uuid import UUID
 
@@ -8,7 +10,7 @@ from fastapi.testclient import TestClient
 from inference_service.adapters.fake import FakeAdapter
 from inference_service.api.app import create_app
 from inference_service.core.contracts import Prediction, TextInput
-from inference_service.runtime.config import Settings
+from inference_service.runtime.config import SchedulingPolicy, Settings
 
 
 def payload(text: object = "The acting was excellent.") -> dict[str, object]:
@@ -69,6 +71,10 @@ def test_health_and_model_metadata(client: TestClient) -> None:
     assert models[0]["available"] is True
     assert models[0]["model_version"] == "v1"
     assert models[0]["labels"] == ["negative", "positive"]
+    metrics = client.get("/metrics")
+    assert metrics.status_code == 200
+    assert "inference_requests_total" in metrics.text
+    assert "inference_pending_requests" in metrics.text
 
 
 async def test_readiness_tracks_lifespan() -> None:
@@ -145,7 +151,7 @@ def test_execution_failure_does_not_expose_exception(monkeypatch: pytest.MonkeyP
     with TestClient(create_app(Settings()), raise_server_exceptions=False) as client:
         response = client.post("/v1/predict", json=payload())
     assert response.status_code == 500
-    assert response.json()["error"]["code"] == "internal_error"
+    assert response.json()["error"]["code"] == "execution_error"
     assert response.json()["request_id"] == response.headers["x-request-id"]
     assert "secret" not in response.text
     assert "Traceback" not in response.text
@@ -160,3 +166,75 @@ def test_wrong_result_count_fails_safely(monkeypatch: pytest.MonkeyPatch) -> Non
         response = client.post("/v1/predict", json=payload())
     assert response.status_code == 500
     assert response.json()["error"]["code"] == "adapter_contract_error"
+
+
+async def test_t10_slow_inference_does_not_block_health_or_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started = threading.Event()
+    release = threading.Event()
+    original = FakeAdapter.predict_batch
+
+    def slow(self: FakeAdapter, items: Sequence[TextInput]) -> list[Prediction]:
+        started.set()
+        assert release.wait(timeout=2)
+        return original(self, items)
+
+    monkeypatch.setattr(FakeAdapter, "predict_batch", slow)
+    app = create_app(
+        Settings(
+            scheduling_policy=SchedulingPolicy.IMMEDIATE,
+            request_deadline_ms=60,
+            graceful_shutdown_seconds=0.1,
+        )
+    )
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            prediction = asyncio.create_task(client.post("/v1/predict", json=payload()))
+            assert await asyncio.to_thread(started.wait, 1)
+            health = await asyncio.wait_for(client.get("/health/live"), 0.2)
+            assert health.status_code == 200
+            response = await asyncio.wait_for(prediction, 0.3)
+            assert response.status_code == 504
+            assert app.state.scheduler.active_batch
+            release.set()
+
+
+async def test_queue_overload_returns_retry_after(monkeypatch: pytest.MonkeyPatch) -> None:
+    started = threading.Event()
+    release = threading.Event()
+    original = FakeAdapter.predict_batch
+
+    def slow(self: FakeAdapter, items: Sequence[TextInput]) -> list[Prediction]:
+        started.set()
+        assert release.wait(timeout=2)
+        return original(self, items)
+
+    monkeypatch.setattr(FakeAdapter, "predict_batch", slow)
+    app = create_app(
+        Settings(
+            scheduling_policy=SchedulingPolicy.SINGLE,
+            pending_capacity=1,
+            request_deadline_ms=1_000,
+        )
+    )
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            first = asyncio.create_task(client.post("/v1/predict", json=payload("good")))
+            assert await asyncio.to_thread(started.wait, 1)
+            second = asyncio.create_task(client.post("/v1/predict", json=payload("bad")))
+            await asyncio.sleep(0)
+            rejected = await client.post("/v1/predict", json=payload("great"))
+            assert rejected.status_code == 429
+            assert rejected.headers["retry-after"] == "1"
+            assert rejected.json()["error"]["code"] == "queue_full"
+            assert (await client.get("/health/ready")).status_code == 200
+            release.set()
+            assert [response.status_code for response in await asyncio.gather(first, second)] == [
+                200,
+                200,
+            ]

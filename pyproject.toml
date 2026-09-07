@@ -12,6 +12,7 @@ dependencies = [
     "fastapi>=0.115,<1",
     "pydantic>=2.10,<3",
     "pydantic-settings>=2.7,<3",
+    "prometheus-client>=0.21,<1",
     "starlette>=0.40,<2",
     "uvicorn>=0.34,<1",
 ]
@@ -33,6 +34,7 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "-ra"
+markers = ["realtime: smoke tests that use real clocks with generous bounds"]
 
 [tool.ruff]
 target-version = "py312"

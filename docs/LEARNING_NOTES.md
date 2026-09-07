@@ -33,3 +33,21 @@ For timed batching, imagine a request has already waited 20 ms behind a busy
 worker and the collection window is 10 ms. When the worker becomes free, the
 scheduler should dispatch available work immediately; it should not wait another
 10 ms. This becomes acceptance test T04.
+
+## M1 — Follow one request through the scheduler
+
+Admission happens while holding the scheduler condition lock, so checking capacity
+and appending are atomic relative to other submissions. The request stays counted
+as pending while the timed policy considers it. The driver removes only live FIFO
+items, marks them running, and submits exactly one batch to the worker.
+
+The HTTP coroutine waits on that envelope's future under its monotonic deadline.
+If it expires or disconnects while pending, cleanup removes it. If it is running,
+the future terminates but the worker continues. When the worker returns, the event
+loop checks output count before pairing result index 0 with input envelope 0, and so
+on. A terminal envelope is never resolved again.
+
+Queue capacity bounds waiting work. One active batch can add at most the configured
+batch size beyond that count. A full queue produces 429 and `Retry-After`; it does
+not make readiness false. Draining, a stopped driver, watchdog expiry, or a fatal
+worker signal makes readiness false.
