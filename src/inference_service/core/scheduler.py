@@ -175,7 +175,7 @@ class ModelScheduler:
             if item.state is RequestState.PENDING and now >= item.deadline_at:
                 item.state = RequestState.EXPIRED
                 if not item.future.done():
-                    item.future.cancel()
+                    item.future.set_exception(RequestDeadlineError())
                 self._record_outcome(item, RequestState.EXPIRED)
             if item.state is RequestState.PENDING:
                 retained.append(item)
@@ -298,7 +298,7 @@ class ModelScheduler:
             if self._now() >= envelope.deadline_at:
                 envelope.state = RequestState.EXPIRED
                 if not envelope.future.done():
-                    envelope.future.cancel()
+                    envelope.future.set_exception(RequestDeadlineError())
                 self._record_outcome(envelope, RequestState.EXPIRED)
             elif error is not None:
                 envelope.state = RequestState.FAILED

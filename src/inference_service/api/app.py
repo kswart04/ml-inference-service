@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -40,20 +40,27 @@ async def _await_prediction(
     prediction = asyncio.create_task(
         scheduler.submit(request.state.request_id, body.input, started_at=request.state.started_at)
     )
+    stop_disconnect_poll = asyncio.Event()
 
     async def disconnected() -> None:
-        while not await request.is_disconnected():  # noqa: ASYNC110 - ASGI requires polling.
-            await asyncio.sleep(0.05)
+        while not stop_disconnect_poll.is_set() and not await request.is_disconnected():
+            try:
+                await asyncio.wait_for(stop_disconnect_poll.wait(), timeout=0.05)
+            except TimeoutError:
+                pass
 
     disconnect = asyncio.create_task(disconnected())
-    done, _ = await asyncio.wait({prediction, disconnect}, return_when=asyncio.FIRST_COMPLETED)
-    if disconnect in done and prediction not in done:
-        prediction.cancel()
-        with suppress(asyncio.CancelledError):
-            await prediction
-        raise asyncio.CancelledError
-    disconnect.cancel()
-    return await prediction
+    try:
+        done, _ = await asyncio.wait({prediction, disconnect}, return_when=asyncio.FIRST_COMPLETED)
+        if disconnect in done and prediction not in done:
+            raise asyncio.CancelledError
+        return await prediction
+    finally:
+        stop_disconnect_poll.set()
+        for task in (prediction, disconnect):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(prediction, disconnect, return_exceptions=True)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

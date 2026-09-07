@@ -434,3 +434,18 @@ GPU run is claimed. These results apply to the authored mixed-length workload.
   owner-selected code license or public deployment claim.
 
 Final clean-checkout and post-integration checks remain before marking the M4 gate.
+
+## M4 release review — expiry and HTTP cancellation
+
+In an isolated checkout, reproduced a deadline race with an injected clock: queue
+cleanup and late batch completion cancelled an expired future, leaking
+`CancelledError` instead of the API's deadline error. Both paths now set
+`RequestDeadlineError` while preserving the terminal state and execution-slot rules.
+
+HTTP handler cancellation now stops and joins its prediction/disconnect child tasks.
+A stop event also handles cancellation swallowed inside ASGI disconnect probing;
+joining without that event initially hung the regression and was corrected.
+Tests cover pending expiry before the real timer, late completed inference, and
+parent-handler cancellation that promptly reclaims pending capacity with no child tasks.
+This review was isolated from the running benchmark snapshot; the report must
+identify the measured revision separately from the final corrected service.

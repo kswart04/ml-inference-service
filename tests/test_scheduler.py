@@ -8,8 +8,12 @@ from collections.abc import Sequence
 from dataclasses import replace
 
 import pytest
+from starlette.requests import Request
+from starlette.types import Message
 
 from inference_service.adapters.fake import FakeAdapter
+from inference_service.api.app import _await_prediction
+from inference_service.api.schemas import PredictRequest
 from inference_service.core.contracts import ModelKey, ModelMetadata, Prediction, TextInput
 from inference_service.core.exceptions import (
     AdapterContractError,
@@ -107,6 +111,88 @@ async def test_t01_results_stay_correlated_when_one_running_client_times_out() -
         "positive",
     ]
     await scheduler.shutdown()
+
+
+async def test_pending_expiry_before_waiter_timer_is_a_deadline_error() -> None:
+    now = [0.0]
+    scheduler = ModelScheduler(
+        ControlledAdapter(),
+        config(delay=10, capacity=1),
+        ServiceMetrics(),
+        logging.getLogger("test.expiry"),
+        clock=lambda: now[0],
+    )
+    await scheduler.start()
+    first = asyncio.create_task(scheduler.submit("first", TextInput(text="good"), started_at=0))
+    await asyncio.sleep(0)
+    now[0] = 2.0
+    second = asyncio.create_task(scheduler.submit("second", TextInput(text="good"), started_at=2))
+    try:
+        with pytest.raises(RequestDeadlineError):
+            await first
+        assert scheduler.pending_count == 1
+    finally:
+        second.cancel()
+        await asyncio.gather(second, return_exceptions=True)
+        await scheduler.shutdown()
+
+
+async def test_finished_batch_after_deadline_returns_deadline_error() -> None:
+    now = [0.0]
+    adapter = ControlledAdapter()
+    adapter.release.clear()
+    scheduler = ModelScheduler(
+        adapter,
+        config(delay=0),
+        ServiceMetrics(),
+        logging.getLogger("test.expiry"),
+        clock=lambda: now[0],
+    )
+    await scheduler.start()
+    task = asyncio.create_task(scheduler.submit("running", TextInput(text="good"), started_at=0))
+    try:
+        await wait_thread(adapter.started)
+        now[0] = 2.0
+        adapter.release.set()
+        with pytest.raises(RequestDeadlineError):
+            await task
+        assert not scheduler.active_batch
+    finally:
+        adapter.release.set()
+        await scheduler.shutdown()
+
+
+async def test_http_handler_cancellation_joins_children_and_reclaims_pending() -> None:
+    scheduler = make_scheduler(ControlledAdapter(), config(delay=10))
+    await scheduler.start()
+    received: asyncio.Queue[Message] = asyncio.Queue()
+    request = Request(
+        {"type": "http", "method": "POST", "path": "/v1/predict"}, receive=received.get
+    )
+    request.state.request_id = "cancel-parent"
+    request.state.started_at = time.monotonic()
+    existing_tasks = asyncio.all_tasks()
+    handler = asyncio.create_task(
+        _await_prediction(
+            scheduler,
+            request,
+            PredictRequest(
+                model_id="fake-sentiment", model_version="v1", input=TextInput(text="good")
+            ),
+        )
+    )
+    try:
+        async with scheduler._condition:
+            await asyncio.wait_for(
+                scheduler._condition.wait_for(lambda: scheduler.pending_count == 1), timeout=1
+            )
+        handler.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(handler, timeout=0.5)
+        assert scheduler.pending_count == 0
+        assert not (asyncio.all_tasks() - existing_tasks)
+    finally:
+        await scheduler.shutdown()
 
 
 async def test_t02_full_batch_dispatches_before_long_window() -> None:
