@@ -9,7 +9,7 @@ Status: M1 scheduler and bounded lifecycle. The final design remains specified i
 | --- | --- | --- |
 | HTTP API | `src/inference_service/api/` | Body cap, schemas, routes, safe errors, request IDs |
 | Core | `src/inference_service/core/` | Contracts, envelopes, states, scheduler, admission and errors |
-| Adapters | `src/inference_service/adapters/` | Typed protocol and deterministic fake implementation |
+| Adapters | `src/inference_service/adapters/` | Typed protocol, fake, and pinned local Hugging Face model |
 | Runtime | `src/inference_service/runtime/` | Validated scheduler configuration and fixed model registry |
 | Observability | `src/inference_service/observability/` | JSON logs and isolated Prometheus registry |
 | Verification | `tests/` | API boundaries, lifecycle, scheduling, overload and failures |
@@ -87,15 +87,21 @@ fullness alone does not change readiness. Liveness never invokes inference.
 
 ## Model identity and fake adapter
 
-The running application configures only `fake-sentiment/v1`. Scheduler instances
-are per model/version; isolated dual-version tests prove their queues and calls
-cannot mix. Concurrent multi-model service is not enabled yet.
+One server session configures either `fake-sentiment/v1` or
+`huggingface-sentiment/hf-sst2-714eb0fa-max256`. Scheduler instances are per
+model/version; isolated dual-version tests prove their queues and calls cannot mix.
+Concurrent multi-model service is not enabled.
 
 The fake splits lowercase text into ASCII letter tokens and counts a documented
 positive/negative word set. It returns fixed scores 0.8, 0.2, or 0.5. These are test
 fixtures, not learned or calibrated probabilities. Its batch contract preserves
 order for 1–8 inputs. Because there is no neural network, M1 proves batching
 mechanics rather than a real batched forward pass.
+
+The Hugging Face adapter validates a locally generated integrity manifest before
+loading. It uses the pinned DistilBERT SST-2 safetensors artifact, pads to the longest
+item in the current batch, truncates at 256 tokens, creates attention masks, and
+runs one PyTorch forward call. See [its adapter card](models/HUGGINGFACE_SST2.md).
 
 ## Observability
 
@@ -105,5 +111,6 @@ version, policy, outcome, and bounded error category. Raw input text is never lo
 Prometheus metrics label only configured identity, policy, and small decision,
 outcome, or failure categories. Metrics cover admission/rejection, terminal states,
 pending depth, active batches, actual batch size, request duration, queue wait,
-execution duration, and failures. Preprocessing and postprocessing metric families
-exist but have no samples until real adapters provide separate phase timings in M2.
+complete adapter-call duration, adapter-reported preprocessing/forward/postprocessing
+durations, and failures. Fake phase values are zero; the real adapter records each
+phase using the same instrumentation for every policy.

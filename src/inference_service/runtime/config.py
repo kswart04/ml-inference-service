@@ -1,4 +1,5 @@
 from enum import StrEnum
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field
@@ -14,7 +15,9 @@ class SchedulingPolicy(StrEnum):
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="INFERENCE_", extra="forbid", frozen=True)
 
-    adapter: Literal["fake"] = "fake"
+    adapter: Literal["fake", "huggingface"] = "fake"
+    artifact_dir: Path = Path("artifacts/huggingface-sst2")
+    device: Literal["cpu", "cuda"] = "cpu"
     max_body_bytes: int = Field(default=32 * 1024, gt=0)
     max_text_characters: int = Field(default=8000, gt=0)
     scheduling_policy: SchedulingPolicy = SchedulingPolicy.TIMED

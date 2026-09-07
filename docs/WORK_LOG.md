@@ -205,3 +205,69 @@ No throughput or latency claim is derived from it.
 The two existing upstream TestClient/AnyIO deprecation warnings remain visible and
 do not fail tests. Real adapters, training, benchmarks, Docker, CI, and portfolio
 release work remain later milestones.
+
+## 2026-09-07 — M2 model selection and preparation
+
+**Purpose:** make external model acquisition explicit, pinned, and reproducible.
+
+- Verified the official repository API and model card: DistilBERT sequence
+  classification, English SST-2/GLUE, Apache-2.0, safetensors available.
+- Resolved immutable Hub commit `714eb0fa89d2f80546fda750413ed43d93601a13`.
+- Added an allowlisted preparation script for exactly five files and a generated
+  SHA-256 manifest. Prepared size on this host: 256 MiB.
+- Kept all artifacts under ignored `artifacts/`; no model weights entered Git.
+- Added optional `hf` dependencies and refreshed the lockfile.
+
+**Verification:** preparation completed without authentication and the manifest's
+five files passed adapter integrity checks. Exact hashes are recorded in the model
+card. The network warning only concerned anonymous Hub rate limits.
+
+## 2026-09-07 — M2 real adapter and runtime integration
+
+**Purpose:** run a genuine batch-capable model through the unchanged M1 scheduler.
+
+- Added local-only tokenizer and sequence-classification loading with safetensors
+  and remote custom code disabled.
+- Validated artifact identity, hashes, tokenizer length, two labels, and label order.
+- Added longest-item padding, 256-token truncation, attention masks, one tensorized
+  forward pass, softmax interpretation, evaluation/inference mode, and CPU/CUDA
+  device handling.
+- Added adapter phase timings to the shared protocol and Prometheus metrics.
+- Added `huggingface` startup configuration while preserving fake defaults.
+- Added committed fake and Hugging Face environment profiles as inspectable examples;
+  the application does not implicitly load them.
+
+**Verification:** a two-item CPU smoke predicted positive for “I loved this movie.”
+and negative for “This was terrible and boring.” This is a functional observation,
+not a quality metric. CPU load, warmup, and close succeeded.
+
+## 2026-09-07 — M2 correctness and offline restart
+
+**Purpose:** prove real batching, parity, HTTP sharing, and reproducible local reload.
+
+- Added six explicitly marked real-model tests.
+- T12 compares three variable-length inputs alone and batched at absolute score
+  tolerance `1e-6`.
+- Forward instrumentation proves one three-item adapter batch uses one model call.
+- The unchanged scheduler combines three real inputs and correlates expected labels.
+- Three independent HTTP requests share one forward call and expose batch metrics.
+- Two fresh adapters reload under Hub/Transformers offline flags and reproduce the
+  same prediction within `1e-8`.
+
+**Verification:** `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 uv run --extra hf pytest
+-m model` passed 6 tests with 48 deliberately deselected. The default offline gate
+passed 48 tests with 6 model tests deliberately deselected. Both retain the two
+documented upstream TestClient/AnyIO warnings.
+
+**M2 gate: passed locally.** Independent HTTP requests demonstrably share one real
+forward pass under the batch-capable configuration, and prepared artifacts reload
+offline. CUDA was not available and is not claimed as tested. Training, the custom
+adapter, quality evaluation, benchmarks, Docker, and CI remain later milestones.
+
+Fresh-copy verification installed the full locked `hf` environment, passed Ruff,
+strict mypy over 26 source files, the 48-test offline gate, and the 6-test explicit
+model gate (10.94 seconds). A real Uvicorn process then accepted three simultaneous
+localhost requests, returned positive/negative/positive in input order, and exposed
+one observed batch with size sum three. Ctrl-C logged draining and stopped events
+and completed application shutdown. This smoke is correctness evidence, not a
+performance measurement.

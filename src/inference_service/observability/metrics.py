@@ -45,9 +45,15 @@ class ServiceMetrics:
             labels,
             registry=self.registry,
         )
-        self.execution = Histogram(
+        self.batch_execution = Histogram(
+            "inference_batch_execution_duration_seconds",
+            "Complete adapter batch-call duration",
+            labels,
+            registry=self.registry,
+        )
+        self.forward = Histogram(
             "inference_forward_duration_seconds",
-            "Adapter batch execution duration",
+            "Adapter-reported model forward duration",
             labels,
             registry=self.registry,
         )

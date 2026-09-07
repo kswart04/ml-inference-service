@@ -4,6 +4,7 @@ import re
 from collections.abc import Sequence
 
 from inference_service.core.contracts import (
+    AdapterTimings,
     ModelKey,
     ModelMetadata,
     Prediction,
@@ -19,6 +20,7 @@ class FakeAdapter:
     def __init__(self, *, max_text_characters: int = 8000) -> None:
         self._max_text_characters = max_text_characters
         self._loaded = False
+        self._last_timings = AdapterTimings()
         self._metadata = ModelMetadata(
             key=ModelKey("fake-sentiment", "v1"),
             task="text-classification",
@@ -31,6 +33,10 @@ class FakeAdapter:
     @property
     def metadata(self) -> ModelMetadata:
         return self._metadata
+
+    @property
+    def last_timings(self) -> AdapterTimings:
+        return self._last_timings
 
     def load(self) -> None:
         self._loaded = True

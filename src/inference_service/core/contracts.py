@@ -47,3 +47,10 @@ class ModelMetadata:
     labels: tuple[str, ...]
     device: str
     max_batch_size: int
+
+
+@dataclass(frozen=True)
+class AdapterTimings:
+    preprocessing_seconds: float = 0.0
+    forward_seconds: float = 0.0
+    postprocessing_seconds: float = 0.0

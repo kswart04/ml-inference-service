@@ -51,3 +51,21 @@ Queue capacity bounds waiting work. One active batch can add at most the configu
 batch size beyond that count. A full queue produces 429 and `Retry-After`; it does
 not make readiness false. Draining, a stopped driver, watchdog expiry, or a fatal
 worker signal makes readiness false.
+
+## M2 — Model preparation is separate from serving
+
+The Hub repository and revision live in adapter code, not the request schema. The
+preparation script resolves that immutable snapshot into local files and hashes
+them. Startup verifies identity and content before Transformers reads anything.
+Serving uses offline local loading, so a prediction cannot cause a download or
+execute repository-provided Python.
+
+The scheduler still sees only `TextInput`, compatibility identity, and ordered
+`Prediction` values. The adapter turns all texts into one rectangular tensor batch,
+runs one forward call, then converts each logits row back into the same position.
+This is the concrete proof that model integration did not change scheduling code.
+
+Padding affects numeric operations, so parity means scores agree within a declared
+tolerance rather than requiring identical bits. Testing short text beside long text
+is important: it exercises padding and attention masks rather than comparing two
+batches with the same shape.

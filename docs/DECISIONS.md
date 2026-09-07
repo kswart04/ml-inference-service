@@ -115,6 +115,45 @@ decision/outcome categories.
 avoid global duplicate collectors. Fixed fields keep request IDs and raw text out
 of metric labels and keep text out of normal logs.
 
-**Consequence:** preprocessing and postprocessing collectors are declared but remain
-unobserved for the M1 fake. M2 adapters must expose reliable phase timings before
-those series carry samples.
+**Consequence:** the M1 fake records zero-valued phases. The M2 adapter supplies
+preprocessing, synchronized forward, and postprocessing durations through the same
+protocol for every policy.
+
+## D009 — Pinned local Hugging Face artifacts (2026-09-07)
+
+**Decision:** support one allowlisted Hub repository at immutable commit
+`714eb0fa89d2f80546fda750413ed43d93601a13`. A separate preparation script downloads
+five required files and writes their SHA-256 manifest. Runtime loads only the local
+directory with remote code, network lookup, and non-safetensors weights disabled.
+
+**Reason:** model acquisition is an operator action with visible provenance. It
+cannot be smuggled into an untrusted prediction request or silently change when a
+branch advances.
+
+**Consequence:** a fresh checkout must run preparation before selecting the adapter.
+The roughly 256 MiB artifact remains outside Git. Any file or preprocessing change
+requires a new internal version and manifest rather than reusing the current ID.
+
+## D010 — Longest padding, 256-token truncation, verified labels (2026-09-07)
+
+**Decision:** tokenize one whole batch with longest-item padding, attention masks,
+and truncation at 256 tokens. Require upstream IDs 0/1 to map to negative/positive.
+
+**Reason:** dynamic shapes reduce padding relative to always padding to 256, while
+the fixed ceiling bounds tensor size. Startup validation prevents silent label inversion.
+
+**Consequence:** prediction can truncate text even when it is below the separate
+8,000-character admission limit. The max length is part of internal model version
+`hf-sst2-714eb0fa-max256`.
+
+## D011 — Optional ML dependencies and explicit model tests (2026-09-07)
+
+**Decision:** keep PyTorch, Transformers, and Hugging Face Hub in the `hf` optional
+extra. The default pytest gate excludes tests marked `model`; the explicit M2 gate
+runs them offline after artifact preparation.
+
+**Reason:** scheduler development and CI can remain fast and offline without hiding
+whether the real model was tested. Missing artifacts produce a setup-oriented skip.
+
+**Consequence:** use `uv sync --locked --extra hf` and `pytest -m model` for M2.
+The verified CPU lock resolves PyTorch 2.14.0, Transformers 5.16.1, and Hub 1.30.0.

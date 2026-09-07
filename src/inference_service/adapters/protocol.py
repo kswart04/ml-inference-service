@@ -1,7 +1,13 @@
 from collections.abc import Sequence
 from typing import Protocol
 
-from inference_service.core.contracts import ModelKey, ModelMetadata, Prediction, TextInput
+from inference_service.core.contracts import (
+    AdapterTimings,
+    ModelKey,
+    ModelMetadata,
+    Prediction,
+    TextInput,
+)
 
 
 class ModelAdapter(Protocol):
@@ -21,5 +27,8 @@ class ModelAdapter(Protocol):
     def batch_key(self, item: TextInput) -> ModelKey: ...
 
     def predict_batch(self, items: Sequence[TextInput]) -> list[Prediction]: ...
+
+    @property
+    def last_timings(self) -> AdapterTimings: ...
 
     def close(self) -> None: ...

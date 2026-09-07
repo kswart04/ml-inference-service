@@ -9,6 +9,7 @@ from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse, Response
 
 from inference_service.adapters.fake import FakeAdapter
+from inference_service.adapters.protocol import ModelAdapter
 from inference_service.api.errors import ServiceError, error_response
 from inference_service.api.middleware import RequestBoundaryMiddleware
 from inference_service.api.schemas import (
@@ -57,9 +58,17 @@ async def _await_prediction(
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     config = settings if settings is not None else Settings()
-    if config.adapter != "fake":
-        raise ValueError("Only the configured fake adapter is supported in M1.")
-    adapter = FakeAdapter(max_text_characters=config.max_text_characters)
+    adapter: ModelAdapter
+    if config.adapter == "fake":
+        adapter = FakeAdapter(max_text_characters=config.max_text_characters)
+    else:
+        from inference_service.adapters.huggingface import HuggingFaceSentimentAdapter
+
+        adapter = HuggingFaceSentimentAdapter(
+            config.artifact_dir,
+            device=config.device,
+            max_text_characters=config.max_text_characters,
+        )
     if config.max_batch_size > adapter.metadata.max_batch_size:
         raise ValueError("Configured batch size exceeds adapter maximum.")
     registry = ModelRegistry([adapter])
@@ -93,8 +102,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         title="ML Inference Service",
-        version="0.2.0",
-        description="M1: bounded lifecycle and custom batching scheduler with a fake adapter.",
+        version="0.3.0",
+        description="M2: custom batching with fake or prepared Hugging Face sentiment adapters.",
         lifespan=lifespan,
     )
     app.state.scheduler = scheduler

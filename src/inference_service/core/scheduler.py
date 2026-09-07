@@ -257,7 +257,13 @@ class ModelScheduler:
             results = await loop.run_in_executor(
                 self._executor, self.adapter.predict_batch, [item.item for item in batch]
             )
-            self.metrics.execution.labels(*self.labels).observe(max(0.0, self._now() - started))
+            self.metrics.batch_execution.labels(*self.labels).observe(
+                max(0.0, self._now() - started)
+            )
+            timings = self.adapter.last_timings
+            self.metrics.preprocessing.labels(*self.labels).observe(timings.preprocessing_seconds)
+            self.metrics.forward.labels(*self.labels).observe(timings.forward_seconds)
+            self.metrics.postprocessing.labels(*self.labels).observe(timings.postprocessing_seconds)
             if len(results) != len(batch):
                 self.metrics.failures.labels(*self.labels, "result_count").inc()
                 await self._finish_batch(batch, error=AdapterContractError())

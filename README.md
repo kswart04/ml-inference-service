@@ -3,8 +3,9 @@
 An educational text classification backend with a custom batching scheduler
 planned across incremental milestones. See [the requirements](docs/REQUIREMENTS.md).
 
-**Current milestone: M1.** The API runs a deterministic fake adapter through the
-custom bounded scheduler. There is no trained model or measured performance result yet.
+**Current milestone: M2.** The custom scheduler supports the deterministic fake and
+a pinned Hugging Face DistilBERT SST-2 adapter. There is no personally trained model
+or measured performance result yet.
 
 ## Development setup
 
@@ -37,11 +38,41 @@ negative score of approximately `0.2`, and a new server request ID. These values
 are fake fixtures. [Adapter behavior](docs/ARCHITECTURE.md#fake-adapter-semantics)
 describes the exact rule and tie handling.
 
+## Hugging Face model setup
+
+Install the optional ML dependencies and prepare the operator-pinned snapshot:
+
+```bash
+uv sync --locked --extra hf
+uv run --extra hf python scripts/prepare_huggingface_model.py
+```
+
+The preparation command downloads five allowlisted files from
+`distilbert/distilbert-base-uncased-finetuned-sst-2-english` at commit
+`714eb0fa89d2f80546fda750413ed43d93601a13`, writes file hashes to a local manifest,
+and stores about 256 MiB under the ignored `artifacts/` directory. Serving then
+loads only that local directory with remote code and network fetching disabled.
+
+Run the real adapter on CPU:
+
+```bash
+INFERENCE_ADAPTER=huggingface \
+uv run --extra hf uvicorn inference_service.api.app:create_app \
+  --factory --host 127.0.0.1 --port 8000 --workers 1
+```
+
+Its API identity is `huggingface-sentiment/hf-sst2-714eb0fa-max256`. Callers must
+send that exact pair. Preparation is the only networked model step.
+The equivalent committed startup values are in `configs/huggingface.env`; settings
+are environment variables and are not loaded from that file automatically.
+
 ## Configuration and boundaries
 
 | Environment variable | Default | Meaning |
 | --- | --- | --- |
-| `INFERENCE_ADAPTER` | `fake` | Only adapter currently accepted |
+| `INFERENCE_ADAPTER` | `fake` | `fake` or prepared `huggingface` |
+| `INFERENCE_ARTIFACT_DIR` | `artifacts/huggingface-sst2` | Operator-controlled local model path |
+| `INFERENCE_DEVICE` | `cpu` | `cpu` or `cuda`; CUDA must be available |
 | `INFERENCE_MAX_BODY_BYTES` | `32768` | Per-request HTTP body cap before JSON parsing |
 | `INFERENCE_MAX_TEXT_CHARACTERS` | `8000` | Text character cap before prediction |
 | `INFERENCE_SCHEDULING_POLICY` | `timed` | `single`, `immediate`, or `timed` |
@@ -84,23 +115,30 @@ test suite covers M0 contracts and input boundaries, not the complete M1
 concurrency acceptance suite. Runtime package installation requires network
 access initially; tests run offline after dependencies are installed.
 
+The default gate excludes downloaded-model tests. After preparation, run the
+explicit offline M2 gate:
+
+```bash
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+uv run --extra hf pytest -m model
+```
+
 ## Following milestones
 
 | Milestone | Work remaining |
 | --- | --- |
-| M2 | Pinned Hugging Face artifact preparation, adapter, real parity tests |
 | M3 | CPU training, held-out evaluation, custom artifacts, reload tests |
 | M4 | Benchmarks and plots, Docker, CI, clean-checkout release verification, demo |
 
-Real-model setup, training, and benchmark commands will be documented when they
-exist. GPU installation is deferred until a real-model milestone; CPU is the
-required baseline.
+Training and benchmark commands will be documented when they exist. CPU is the
+verified baseline; CUDA behavior is implemented but has not been tested on this host.
 
 ## Project documentation
 
 - [Work log](docs/WORK_LOG.md): every completed section and its verification.
 - [Architecture](docs/ARCHITECTURE.md): contracts and request flow.
 - [Decisions](docs/DECISIONS.md): choices and their trade-offs.
-- [Learning notes](docs/LEARNING_NOTES.md): concepts to understand before M1.
+- [Learning notes](docs/LEARNING_NOTES.md): concepts behind each completed milestone.
+- [Hugging Face adapter card](docs/models/HUGGINGFACE_SST2.md): provenance and behavior.
 
 Repository licensing has not yet been selected by the owner.
