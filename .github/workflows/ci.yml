@@ -4,6 +4,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      huggingface:
+        description: Prepare and test the pinned Hugging Face model
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -37,7 +42,7 @@ jobs:
       - run: uv run --no-sync pytest -m model tests/test_custom_adapter.py
   container:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: docker build -t inference-service:test .
@@ -54,3 +59,51 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"model_id":"fake-sentiment","model_version":"v1","input":{"text":"Excellent"}}' \
             | python3 -c 'import json,sys; assert json.load(sys.stdin)["prediction"]["label"] == "positive"'
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: '0.12.10'
+      - name: Prepare a CPU custom model
+        run: |
+          uv sync --locked --extra custom
+          uv run --no-sync python -m training.data
+          uv run --no-sync python -m training.train
+      - run: docker build --build-arg MODEL_EXTRA=custom -t inference-service:custom-test .
+      - name: Exercise custom CPU container with read-only artifacts
+        run: |
+          docker run -d --name inference-custom-smoke -p 127.0.0.1:8000:8000 \
+            --mount "type=bind,source=$PWD/artifacts/custom-sentiment,target=/models/custom,readonly" \
+            -e INFERENCE_ADAPTER=custom -e INFERENCE_CUSTOM_ARTIFACT_DIR=/models/custom \
+            inference-service:custom-test
+          trap 'docker logs inference-custom-smoke; docker rm -f inference-custom-smoke' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8000/health/ready; then break; fi
+            sleep 1
+          done
+          python3 - <<'PY'
+          import json, urllib.request
+          base = 'http://127.0.0.1:8000'
+          model = json.load(urllib.request.urlopen(base + '/v1/models'))['models'][0]
+          assert model['model_id'] == 'custom-sentiment'
+          body = {'model_id': model['model_id'], 'model_version': model['model_version'],
+                  'input': {'text': 'Excellent food and friendly service.'}}
+          request = urllib.request.Request(base + '/v1/predict', data=json.dumps(body).encode(),
+                                           headers={'Content-Type': 'application/json'})
+          result = json.load(urllib.request.urlopen(request))
+          assert result['model_version'] == model['model_version']
+          assert abs(sum(result['prediction']['scores'].values()) - 1) < 1e-6
+          PY
+  huggingface:
+    if: github.event_name == 'workflow_dispatch' && inputs.huggingface
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: '0.12.10'
+      - run: uv sync --locked --extra hf
+      - run: uv run --no-sync python scripts/prepare_huggingface_model.py
+      - run: uv run --no-sync pytest -m model tests/test_huggingface_adapter.py
+        env:
+          HF_HUB_OFFLINE: '1'
+          TRANSFORMERS_OFFLINE: '1'
