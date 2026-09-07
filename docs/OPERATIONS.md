@@ -25,6 +25,7 @@ read-only. Run from the repository root after training:
 
 ```bash
 docker build --build-arg MODEL_EXTRA=custom -t ml-inference-service:custom .
+chmod a+r artifacts/custom-sentiment/weights.safetensors
 docker run --rm --name inference-custom \
   -p 127.0.0.1:8000:8000 \
   --mount "type=bind,source=$(pwd)/artifacts/custom-sentiment,target=/models/custom,readonly" \
@@ -36,6 +37,8 @@ docker run --rm --name inference-custom \
 For DistilBERT use `MODEL_EXTRA=hf`, `INFERENCE_ADAPTER=huggingface`, mount
 `artifacts/huggingface-sst2` at `/models/hf`, and set
 `INFERENCE_ARTIFACT_DIR=/models/hf`. Files must be readable by container UID 10001.
+Safetensors exports weights with owner-only permissions; the command above grants
+read access to that public-dataset model file for the container's different UID.
 The image loads them locally during startup. It never fetches weights on a request.
 Linux's lock uses PyTorch's CPU wheel index, avoiding CUDA library downloads.
 

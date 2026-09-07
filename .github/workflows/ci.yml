@@ -67,6 +67,7 @@ jobs:
           uv sync --locked --extra custom
           uv run --no-sync python -m training.data
           uv run --no-sync python -m training.train
+          chmod a+r artifacts/custom-sentiment/weights.safetensors
       - run: docker build --build-arg MODEL_EXTRA=custom -t inference-service:custom-test .
       - name: Exercise custom CPU container with read-only artifacts
         run: |
