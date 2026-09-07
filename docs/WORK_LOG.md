@@ -271,3 +271,95 @@ localhost requests, returned positive/negative/positive in input order, and expo
 one observed batch with size sum three. Ctrl-C logged draining and stopped events
 and completed application shutdown. This smoke is correctness evidence, not a
 performance measurement.
+
+## 2026-09-07 — M3 dataset selection and preparation
+
+**Purpose:** establish a licensed, reproducible public sentiment dataset before fitting.
+
+- Verified the official UCI card and CC BY 4.0 license; recorded Kotzias attribution
+  and DOI. Selected its 3,000-sentence benchmark within the requirements' permitted
+  public-dataset scope. No full IMDb review dataset was downloaded.
+- Downloaded and pinned the 82 KB archive by SHA-256. Added `training.data` using
+  standard-library ZIP/JSON rather than another dataset dependency.
+- Preserved Unicode separators inside IMDb sentences by using literal newline
+  record boundaries. The original 500/500 labels in each domain are validated.
+- Removed 29 duplicate/conflicting rows before domain/label-stratified splitting
+  with seed 42: train 2,076, validation 446, test 449. Exported IDs and split hashes.
+
+**Verification:** both supplied-archive and documented direct-download preparation
+produced identical split hashes. Unit tests cover deduplication, disjoint partitions,
+Unicode record parsing, overwrite refusal, and changed-split rejection.
+
+## 2026-09-07 — M3 training and artifact export
+
+**Purpose:** train a compact classifier from initialization and make its export inspectable.
+
+- Added a 64-dimensional embedding, explicitly masked mean, 64-unit ReLU hidden
+  layer, and two-class output. Encoding is shared by training and serving.
+- Added bounded `small` and fuller `full` CPU profiles. Ran `small` with 1,200
+  balanced examples, seed 42, AdamW, two threads, and deterministic algorithms.
+- Fit the 2,923-entry vocabulary exclusively on the selected training rows.
+  Selected epoch 12 by validation macro-F1; stopped after epoch 19 with patience 7.
+- Exported safetensors, vocabulary, typed tokenizer/architecture/label config, full
+  training history and provenance, and an exact file-hash manifest. Added `custom`
+  dependency extra and updated `uv.lock`. Data and weights stay ignored by Git.
+
+**Verification:** validation accuracy 76.46%, macro-F1 0.7631. Two independent runs
+produced byte-identical weights, vocabulary, and configuration. Measured training
+function durations were 0.892 and 0.718 seconds on Apple M5 Pro, 48 GiB RAM, CPU
+float32; imports, download, and final provenance/manifest serialization are excluded.
+Weight/config export is included. No full-profile
+or CUDA quality run is claimed. Exact hashes and method are in the model card.
+
+## 2026-09-07 — M3 frozen held-out evaluation
+
+**Purpose:** measure the selected export without using test data for model selection.
+
+- Added separate `training.evaluate`, which verifies the dataset identity and test
+  IDs against training/validation provenance before inference. Existing evaluation
+  output is refused. No post-test tuning was performed.
+- Recorded accuracy, macro-F1, class distributions, confusion matrix, and a baseline
+  fixed from training labels. Exported a local report and small checked-in aggregate.
+
+**Verification:** on 449 held-out examples, accuracy **68.82%** and macro-F1 **0.6811**
+beat the training-majority baseline of **50.11%** and **0.3338**. The validation/test
+gap and 103 false negatives are documented as limitations, not concealed by reruns.
+
+## 2026-09-07 — M3 adapter and reload integration
+
+**Purpose:** prove a second real architecture works through the same scheduler.
+
+- Added `CustomSentimentAdapter`, content-derived versioning, strict artifact
+  integrity/configuration checks, local warmup, inference-mode execution, longest
+  padding, phase timings, and bounded batches. Added startup selection and env profile.
+- Kept `src/inference_service/core/` unchanged; only startup selects the new adapter.
+- Added custom T12 mixed-length score parity, T16 fresh-process offline reload,
+  corrupted-weight rejection, explicit masking, and HTTP batch-correlation tests.
+
+**Verification:** custom and existing Hugging Face model tests passed. T16 uses a
+different process and working directory with socket connections forbidden. Three
+independent HTTP requests share one custom forward call and match direct scores.
+Parity tolerance is absolute `1e-6`. `git diff` confirms no scheduler-core changes.
+
+## 2026-09-07 — M3 developer setup and documentation
+
+**Purpose:** document every implemented section and preserve lightweight development.
+
+- Updated README training/evaluation/serving commands, settings, test selection,
+  architecture, decisions D012–D014, learning notes, and the custom model card.
+- Recorded original code and lock hashes in the aggregate for the pre-commit run.
+- Created an isolated locked default environment: fake/data tests run without
+  PyTorch. Full-project mypy requires optional ML type information; corrected the
+  README to install both extras for that check rather than suppressing type errors.
+- Tested documented direct dataset download and isolated full-dependency type checks.
+
+**M3 gate: passed locally.** The selected model beats the held-out baseline, reloads
+independently, and integrates without scheduler-core changes. M4 benchmarks, plots,
+Docker, CI, and the release demo remain unimplemented. The known two upstream
+Starlette/AnyIO deprecation warnings persist; no model-test skip is counted as a pass.
+
+Final M3 verification: **55 default tests passed**, **11 explicit real-model tests
+passed** (5 custom, 6 Hugging Face), Ruff lint/format passed, and strict mypy passed
+over 36 source/test/training files. The Unicode parser regression fixture initially
+generated non-ASCII identifiers that legitimately deduplicated; corrected the
+fixture to unique ASCII identifiers and the regression gate passed.

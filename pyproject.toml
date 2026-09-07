@@ -18,6 +18,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+custom = [
+    "torch>=2.7,<3",
+    "safetensors>=0.5,<1",
+]
 hf = [
     "huggingface-hub>=0.34,<2",
     "torch>=2.7,<3",
@@ -38,6 +42,7 @@ packages = ["src/inference_service"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "-ra -m 'not model'"
@@ -56,5 +61,5 @@ select = ["E", "F", "I", "UP", "B", "ASYNC"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["src", "tests"]
+files = ["src", "tests", "training"]
 plugins = ["pydantic.mypy"]

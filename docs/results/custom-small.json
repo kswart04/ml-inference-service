@@ -1,0 +1,158 @@
+{
+  "artifact_files": {
+    "config.json": "5d304e14a64de6ac2900dec7eb2b188e929f6af82b86b88c22fcef20eb652136",
+    "training.json": "bd430837063249479f507bb03b825f7545562ab9ce139beaf58caa121f669c5c",
+    "vocabulary.json": "6579fb74de1ccf5ffefdd2d757a70cecfc8f56159ae76e1c2f03243b75179635",
+    "weights.safetensors": "4370952bb5be63f6178df8d80334de28fda254d97e555aa341d94864e096d12d"
+  },
+  "best_epoch": 12,
+  "dataset": {
+    "citation": "Kotzias (2015), Sentiment Labelled Sentences, UCI, doi:10.24432/C57604",
+    "license": "CC-BY-4.0",
+    "raw_count": 3000,
+    "removed_duplicate_or_conflicting_rows": 29,
+    "seed": 42,
+    "source": "https://archive.ics.uci.edu/static/public/331/sentiment+labelled+sentences.zip",
+    "source_sha256": "afc26626d710899948693e1a61405dce197f57ffa719fa1130d346b4cc095343",
+    "split_method": "canonical-token deduplication; domain/label-stratified 70/15/15",
+    "splits": {
+      "test": {
+        "count": 449,
+        "domains": {
+          "amazon_cells": 149,
+          "imdb": 150,
+          "yelp": 150
+        },
+        "labels": {
+          "0": 225,
+          "1": 224
+        },
+        "sha256": "6ae1ab200d72792b4c51aef847b370827a93413a13f51ff2fc9c220ac5f36b54"
+      },
+      "train": {
+        "count": 2076,
+        "domains": {
+          "amazon_cells": 687,
+          "imdb": 694,
+          "yelp": 695
+        },
+        "labels": {
+          "0": 1038,
+          "1": 1038
+        },
+        "sha256": "e9b44003d84aa8330ac55adb5ef8a942c5a2153920ef64fc57b9491f23bdb7c0"
+      },
+      "validation": {
+        "count": 446,
+        "domains": {
+          "amazon_cells": 147,
+          "imdb": 150,
+          "yelp": 149
+        },
+        "labels": {
+          "0": 223,
+          "1": 223
+        },
+        "sha256": "32f206165d5686cfec1b40e5b27cb29dbe43048e496fd6db24c6ce3456186b7c"
+      }
+    }
+  },
+  "git_base": "8f926a479db8035e172d849789406b2921af4c71",
+  "hardware": {
+    "cuda_available": false,
+    "logical_cpus": 18,
+    "machine": "arm64",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "processor": "arm"
+  },
+  "model_version": "custom-64a8f1b271531821",
+  "profile": "small",
+  "release_gate_passed": true,
+  "seed": 42,
+  "source_sha256": {
+    "src/inference_service/adapters/custom.py": "300d554c946316a926554744e72327b81496920ca00ba7999f3df942d90009bd",
+    "src/inference_service/adapters/custom_artifacts.py": "fd8dcde01944391fdfd9e5fb79bf49daac179ee80dba1f2c1682c0bff81e97bf",
+    "src/inference_service/adapters/custom_network.py": "bd069ac663af670fba91a1d7b3a84b7025032b1d6ce2f7c05ed58b05a6a52406",
+    "training/__init__.py": "377582ea8ef3609d93382a463e3cda856e2a6fa2ca70e6892972cc990d2843b0",
+    "training/data.py": "c5505977a8a2f02903b5776b94808582aecf5fbe07d7cb903bce8f4d7b85bcfb",
+    "training/evaluate.py": "d1bdc332bd811ce657f11ff635d7b324fe77f6ed1e0a03d0a7b5bcb4d05c6fcd",
+    "training/metrics.py": "38398f6fcfeecee8659c03fa7d9fec873d7d69eef08b26644499ddfe459a10e5",
+    "training/train.py": "62ecfe688a34fbf495dbdab32e3a4d724ca129029cfa1f36c81ec8270d2173d4",
+    "uv.lock": "819a408ab431edfa7a0781ec3202a92186c837bfaab03e9b539929f07a0fa618"
+  },
+  "test": {
+    "accuracy": 0.688195991091314,
+    "class_distribution": {
+      "negative": 225,
+      "positive": 224
+    },
+    "confusion_matrix_true_by_predicted": [
+      [
+        188,
+        37
+      ],
+      [
+        103,
+        121
+      ]
+    ],
+    "count": 449,
+    "macro_f1": 0.6810950119728885
+  },
+  "training_distribution": {
+    "count": 1200,
+    "domains": {
+      "amazon_cells": 400,
+      "imdb": 400,
+      "yelp": 400
+    },
+    "labels": {
+      "0": 600,
+      "1": 600
+    }
+  },
+  "training_majority_test_baseline": {
+    "accuracy": 0.5011135857461024,
+    "class_distribution": {
+      "negative": 225,
+      "positive": 224
+    },
+    "confusion_matrix_true_by_predicted": [
+      [
+        225,
+        0
+      ],
+      [
+        224,
+        0
+      ]
+    ],
+    "count": 449,
+    "macro_f1": 0.33382789317507416
+  },
+  "training_wall_seconds": 0.8917099579703063,
+  "validation": {
+    "accuracy": 0.7645739910313901,
+    "class_distribution": {
+      "negative": 223,
+      "positive": 223
+    },
+    "confusion_matrix_true_by_predicted": [
+      [
+        188,
+        35
+      ],
+      [
+        70,
+        153
+      ]
+    ],
+    "count": 446,
+    "macro_f1": 0.7631151645750186
+  },
+  "versions": {
+    "python": "3.12.14",
+    "torch": "2.14.0"
+  },
+  "vocabulary_size": 2923
+}

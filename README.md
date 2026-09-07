@@ -3,9 +3,10 @@
 An educational text classification backend with a custom batching scheduler
 planned across incremental milestones. See [the requirements](docs/REQUIREMENTS.md).
 
-**Current milestone: M2.** The custom scheduler supports the deterministic fake and
-a pinned Hugging Face DistilBERT SST-2 adapter. There is no personally trained model
-or measured performance result yet.
+**Current milestone: M3.** The shared scheduler serves the deterministic fake,
+pinned Hugging Face DistilBERT, and a small PyTorch classifier trained locally from
+initialization. The custom model achieved 68.82% held-out accuracy against a 50.11%
+majority baseline. Serving performance experiments remain M4 work.
 
 ## Development setup
 
@@ -35,7 +36,7 @@ Interactive API documentation is at <http://127.0.0.1:8000/docs>. Stop with Ctrl
 
 The example returns `label: positive` with a fixed positive score of `0.8`, a
 negative score of approximately `0.2`, and a new server request ID. These values
-are fake fixtures. [Adapter behavior](docs/ARCHITECTURE.md#fake-adapter-semantics)
+are fake fixtures. [Adapter behavior](docs/ARCHITECTURE.md#model-identity-and-fake-adapter)
 describes the exact rule and tie handling.
 
 ## Hugging Face model setup
@@ -70,8 +71,9 @@ are environment variables and are not loaded from that file automatically.
 
 | Environment variable | Default | Meaning |
 | --- | --- | --- |
-| `INFERENCE_ADAPTER` | `fake` | `fake` or prepared `huggingface` |
+| `INFERENCE_ADAPTER` | `fake` | `fake`, prepared `huggingface`, or trained `custom` |
 | `INFERENCE_ARTIFACT_DIR` | `artifacts/huggingface-sst2` | Operator-controlled local model path |
+| `INFERENCE_CUSTOM_ARTIFACT_DIR` | `artifacts/custom-sentiment` | Operator-controlled custom export |
 | `INFERENCE_DEVICE` | `cpu` | `cpu` or `cuda`; CUDA must be available |
 | `INFERENCE_MAX_BODY_BYTES` | `32768` | Per-request HTTP body cap before JSON parsing |
 | `INFERENCE_MAX_TEXT_CHARACTERS` | `8000` | Text character cap before prediction |
@@ -84,10 +86,11 @@ are environment variables and are not loaded from that file automatically.
 | `INFERENCE_WORKER_WATCHDOG_SECONDS` | `30` | Running-batch stuck threshold |
 | `INFERENCE_RETRY_AFTER_SECONDS` | `1` | `Retry-After` value for queue overload |
 
-Numeric limits must be positive integers. Settings load at application creation;
+Capacity and size limits must be positive; collection delay may be zero.
+Settings load at application creation;
 invalid settings fail startup. The app does not automatically load a `.env` file.
-Requests require both `model_id` and `model_version`; the configured identity is
-`fake-sentiment/v1`.
+Requests require both `model_id` and `model_version`; discover the configured
+identity at `/v1/models`. The default is `fake-sentiment/v1`.
 
 The API implements safe errors for oversized bodies (413), invalid input (422),
 unknown models/versions (404), queue overload (429), unavailable workers/draining
@@ -106,31 +109,71 @@ would create independent queues and model copies.
 ```bash
 uv run ruff check .
 uv run ruff format --check .
-uv run mypy
 uv run pytest
 ```
 
-These checks use the fake adapter and make no model or dataset downloads. The
-test suite covers M0 contracts and input boundaries, not the complete M1
-concurrency acceptance suite. Runtime package installation requires network
-access initially; tests run offline after dependencies are installed.
+These checks require no model or dataset downloads. The default suite covers API
+contracts, scheduler concurrency and lifecycle, and data/tokenizer/metric logic.
+Package installation requires network access initially; tests run offline afterward.
+Strict type checking of all code requires the optional ML libraries' type information:
+
+```bash
+uv run --extra hf --extra custom mypy
+```
 
 The default gate excludes downloaded-model tests. After preparation, run the
-explicit offline M2 gate:
+explicit offline gate for both real models:
 
 ```bash
 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
-uv run --extra hf pytest -m model
+uv run --extra hf --extra custom pytest -m model
 ```
+
+Missing artifacts produce explicit skips. To test only one prepared adapter, pass
+`tests/test_huggingface_adapter.py` or `tests/test_custom_adapter.py` as well.
+
+## Train and serve the custom model
+
+From the repository root, prepare the hash-pinned UCI Sentiment Labelled Sentences
+dataset (CC BY 4.0), train on the bounded CPU profile, and evaluate the frozen export:
+
+```bash
+uv sync --locked --extra custom
+uv run --extra custom python -m training.data
+uv run --extra custom python -m training.train --profile small
+uv run --extra custom python -m training.evaluate --output artifacts/custom-evaluation.json
+INFERENCE_ADAPTER=custom \
+uv run --extra custom uvicorn inference_service.api.app:create_app \
+  --factory --host 127.0.0.1 --port 8000 --workers 1
+```
+
+Only data preparation downloads anything. All subsequent model operations use
+local files. Preparation and training refuse existing output directories;
+evaluation refuses to replace an existing evaluation. For another experiment use
+`--output artifacts/custom-another-run` when training, then point evaluation's
+`--artifact` and serving's `INFERENCE_CUSTOM_ARTIFACT_DIR` at that directory.
+For evaluation of another export, also pass a fresh `--output` report path. The
+checked-in `docs/results/custom-small.json` preserves the original measurement.
+
+The `full` profile uses all 2,076 training examples and permits 50 epochs; `small`
+uses 1,200 and permits 25. Both select the best validation macro-F1 checkpoint with
+seven-epoch patience. The full profile has not been quality-evaluated. Do not tune
+new experiments against the already-reported test scores.
+
+Call `/v1/models` to obtain `custom-sentiment` and the generated `custom-…` version,
+then supply that exact pair to the same `/v1/predict` endpoint shown above. A rerun
+has a different provenance report and thus a different version, even when its
+weights reproduce exactly. Configuration examples are in `configs/custom.env`.
+See the [custom model card](docs/models/CUSTOM_SENTIMENT.md) for the split recipe,
+architecture, exact hashes, measured hardware, quality limits, and reproduction.
 
 ## Following milestones
 
 | Milestone | Work remaining |
 | --- | --- |
-| M3 | CPU training, held-out evaluation, custom artifacts, reload tests |
 | M4 | Benchmarks and plots, Docker, CI, clean-checkout release verification, demo |
 
-Training and benchmark commands will be documented when they exist. CPU is the
+Benchmark commands will be documented when they exist. CPU is the
 verified baseline; CUDA behavior is implemented but has not been tested on this host.
 
 ## Project documentation
@@ -140,5 +183,6 @@ verified baseline; CUDA behavior is implemented but has not been tested on this 
 - [Decisions](docs/DECISIONS.md): choices and their trade-offs.
 - [Learning notes](docs/LEARNING_NOTES.md): concepts behind each completed milestone.
 - [Hugging Face adapter card](docs/models/HUGGINGFACE_SST2.md): provenance and behavior.
+- [Custom model card](docs/models/CUSTOM_SENTIMENT.md): training and held-out results.
 
 Repository licensing has not yet been selected by the owner.

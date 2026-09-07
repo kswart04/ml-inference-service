@@ -157,3 +157,45 @@ whether the real model was tested. Missing artifacts produce a setup-oriented sk
 
 **Consequence:** use `uv sync --locked --extra hf` and `pytest -m model` for M2.
 The verified CPU lock resolves PyTorch 2.14.0, Transformers 5.16.1, and Hub 1.30.0.
+
+## D012 — UCI sentences and a small CPU baseline (2026-09-07)
+
+**Decision:** use the official UCI Sentiment Labelled Sentences archive, pinned by
+SHA-256, with its explicit CC BY 4.0 attribution. Use the standard library for this
+82 KB archive instead of adding a dataset framework.
+
+**Reason:** the requirements allow a public sentiment dataset such as IMDb. This
+source has clear licensing metadata and a bounded three-domain sentiment task.
+The proposed Python/FastAPI/PyTorch stack remains unchanged.
+
+**Consequence:** results describe this small sentence benchmark, not performance on
+the full IMDb review dataset. Near duplicates and related parent reviews may remain
+despite removing exact normalized-text overlap before splitting.
+
+## D013 — Separate fitting, selection, and final evaluation (2026-09-07)
+
+**Decision:** split deterministically before vocabulary fitting, fit on selected
+training rows only, select the checkpoint on validation macro-F1, and evaluate an
+immutable export with a separate test command. Provide small and full CPU profiles.
+
+**Reason:** test-based vocabulary fitting or checkpoint selection would make the
+held-out quality claim unreliable. Separate commands make the data boundary reviewable.
+
+**Consequence:** output overwrite is refused. The reported test measurement is final
+for this configuration; it must not become a tuning target. A seven-point gap to
+validation is documented, not hidden by retraining after seeing test results.
+
+## D014 — Shared model code and content-checked exports (2026-09-07)
+
+**Decision:** share token encoding and the masked-mean PyTorch network between
+training and serving. Export safetensors, vocabulary, typed config, and provenance;
+derive the model version from the manifest's file hashes.
+
+**Reason:** training/serving preprocessing drift would invalidate reload evidence.
+Masking the pooling denominator is essential for predictions to remain stable when
+neighbors have different lengths. A strict manifest catches changed artifacts.
+
+**Consequence:** an independent process can reconstruct the model offline. The
+provenance report includes elapsed time, so a deterministic retraining can produce
+the same weights but a different version. Integrity hashes detect changes; they do
+not establish authenticity of arbitrary untrusted exports. Paths remain operator-owned.

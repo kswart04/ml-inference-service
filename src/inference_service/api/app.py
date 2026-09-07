@@ -61,11 +61,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     adapter: ModelAdapter
     if config.adapter == "fake":
         adapter = FakeAdapter(max_text_characters=config.max_text_characters)
-    else:
+    elif config.adapter == "huggingface":
         from inference_service.adapters.huggingface import HuggingFaceSentimentAdapter
 
         adapter = HuggingFaceSentimentAdapter(
             config.artifact_dir,
+            device=config.device,
+            max_text_characters=config.max_text_characters,
+        )
+    else:
+        from inference_service.adapters.custom import CustomSentimentAdapter
+
+        adapter = CustomSentimentAdapter(
+            config.custom_artifact_dir,
             device=config.device,
             max_text_characters=config.max_text_characters,
         )
@@ -102,8 +110,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         title="ML Inference Service",
-        version="0.3.0",
-        description="M2: custom batching with fake or prepared Hugging Face sentiment adapters.",
+        version="0.4.0",
+        description="M3: shared batching for fake, Hugging Face, and locally trained models.",
         lifespan=lifespan,
     )
     app.state.scheduler = scheduler

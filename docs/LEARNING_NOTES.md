@@ -69,3 +69,28 @@ Padding affects numeric operations, so parity means scores agree within a declar
 tolerance rather than requiring identical bits. Testing short text beside long text
 is important: it exercises padding and attention masks rather than comparing two
 batches with the same shape.
+
+## M3 — Quality, reproducibility, and model boundaries
+
+Vocabulary construction is learning: even without labels, fitting it on test text
+would expose held-out information. The small profile fits only its selected 1,200
+training rows, uses validation for checkpoint selection, and opens test data only
+after exporting a frozen checkpoint. The training-majority rule is fixed before
+test scoring; it does not inspect test labels to choose its prediction.
+
+An embedding padding row alone does not fix mean pooling. If a two-token sentence
+is padded to ten tokens and divided by ten, its representation shrinks. Explicitly
+mask both the summed embeddings and the token count. The padding test deliberately
+sets the padding embedding to a large value to detect an incomplete implementation.
+
+Reproducibility has distinct checks: two training processes produced identical
+weights/vocabulary/configuration; a fresh serving process loaded those artifacts
+offline and reproduced predictions; variable-length batching preserved scores to
+`1e-6`. The manifest includes run provenance, so identical weights do not imply an
+identical version when the recorded run timing differs.
+
+Passing the majority baseline is a minimum quality gate, not a claim of a strong
+sentiment system. The test confusion matrix exposes 103 missed positive examples,
+and test accuracy falls below validation. Documenting that gap is more useful than
+repeatedly tuning against the same test set. Serving latency and throughput still
+need separate M4 experiments.

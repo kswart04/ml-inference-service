@@ -1,6 +1,6 @@
 # Architecture
 
-Status: M1 scheduler and bounded lifecycle. The final design remains specified in
+Status: M3, with two real adapters using the M1 scheduler. The final design remains specified in
 [REQUIREMENTS.md](REQUIREMENTS.md).
 
 ## Package structure
@@ -9,13 +9,14 @@ Status: M1 scheduler and bounded lifecycle. The final design remains specified i
 | --- | --- | --- |
 | HTTP API | `src/inference_service/api/` | Body cap, schemas, routes, safe errors, request IDs |
 | Core | `src/inference_service/core/` | Contracts, envelopes, states, scheduler, admission and errors |
-| Adapters | `src/inference_service/adapters/` | Typed protocol, fake, and pinned local Hugging Face model |
+| Adapters | `src/inference_service/adapters/` | Typed protocol, fake, pinned Hugging Face, custom network and artifacts |
 | Runtime | `src/inference_service/runtime/` | Validated scheduler configuration and fixed model registry |
 | Observability | `src/inference_service/observability/` | JSON logs and isolated Prometheus registry |
 | Verification | `tests/` | API boundaries, lifecycle, scheduling, overload and failures |
+| Training | `training/` | Pinned dataset preparation, CPU training, frozen-export evaluation |
+| Preparation | `scripts/` | Explicit Hugging Face snapshot retrieval |
 
-Training, benchmark, and artifact-preparation modules arrive when their milestones
-implement real behavior. Empty placeholders do not establish support.
+Benchmarks remain M4 work.
 
 ## Request flow
 
@@ -102,6 +103,27 @@ The Hugging Face adapter validates a locally generated integrity manifest before
 loading. It uses the pinned DistilBERT SST-2 safetensors artifact, pads to the longest
 item in the current batch, truncates at 256 tokens, creates attention masks, and
 runs one PyTorch forward call. See [its adapter card](models/HUGGINGFACE_SST2.md).
+
+The custom adapter loads the local vocabulary, typed tokenizer/architecture config,
+and safetensors state after checking an exact file manifest and content-derived
+version. Its embedding → masked mean → hidden ReLU → two-class network lives in
+`custom_network.py`, shared with offline training. Both adapters implement the same
+protocol and phase timings. Integrating the custom adapter changed startup selection,
+not scheduler core code. See [the custom model card](models/CUSTOM_SENTIMENT.md).
+
+## Offline custom-model lifecycle
+
+`training.data` validates a pinned UCI archive, deduplicates normalized text before
+stratification, and records immutable split files and hashes. `training.train` fits
+vocabulary on selected training rows, initializes weights, and chooses a checkpoint
+using validation macro-F1. It never opens the test split. `training.evaluate` checks
+the frozen export against its dataset provenance and measures the held-out test set.
+The evaluation report is added separately from the versioned prediction artifacts.
+Each command refuses to overwrite existing experiment output.
+
+Only preparation requires networking. Serving imports PyTorch lazily when a real
+adapter is loaded; fake service startup and default tests need no ML dependencies.
+Full strict type checking requires the optional extras for their type information.
 
 ## Observability
 
