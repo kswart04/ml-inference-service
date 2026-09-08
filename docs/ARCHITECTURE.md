@@ -1,6 +1,6 @@
 # Architecture
 
-Status: M4 release candidate, with two real adapters using the shared scheduler. The design is specified in
+Status: M4 complete, with two real adapters using the shared scheduler. The design is specified in
 [REQUIREMENTS.md](REQUIREMENTS.md).
 
 ## Package structure

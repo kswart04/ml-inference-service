@@ -3,7 +3,7 @@
 An educational text classification backend with a custom batching scheduler
 planned across incremental milestones. See [the requirements](docs/REQUIREMENTS.md).
 
-**Current milestone: M4 release verification.** The shared scheduler serves the deterministic fake,
+**Current milestone: M4 complete.** The shared scheduler serves the deterministic fake,
 pinned Hugging Face DistilBERT, and a small PyTorch classifier trained locally from
 initialization. The custom model achieved 68.82% held-out accuracy against a 50.11%
 majority baseline. Repeated CPU measurements, charts, containers, CI, and a local

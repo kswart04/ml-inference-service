@@ -449,3 +449,29 @@ Tests cover pending expiry before the real timer, late completed inference, and
 parent-handler cancellation that promptly reclaims pending capacity with no child tasks.
 This review was isolated from the running benchmark snapshot; the report must
 identify the measured revision separately from the final corrected service.
+
+## 2026-09-08 — M4 release verification
+
+**Purpose:** prove the documented release can be reproduced from a clean checkout
+and close the milestone only after integrating the deadline review.
+
+- Repeated Ruff lint and format checks, strict mypy over 46 files, and the complete
+  default suite after integration: **63 tests passed**.
+- Synced a separate environment from the lockfile in a detached clean checkout,
+  downloaded the documented UCI source, and trained the custom model from scratch.
+  It reproduced 76.46% validation accuracy and 0.7631 macro F1; all **5 custom-model
+  tests passed** against the newly exported artifact.
+- Synced the Hugging Face extra and ran its cached artifact fully offline; all **6
+  Hugging Face adapter tests passed**. A missing artifact was also confirmed to
+  produce explicit skips rather than false passes.
+- Started a real fake-model server and exercised immediate, single, and timed
+  policies through the benchmark driver. Each sent and received all 100 intended
+  requests at 50 requests/sec, remained client-valid, and drained cleanly.
+- GitHub Actions had already passed the offline, custom-model, and non-root
+  fake/custom container jobs, while the manual Linux CPU job passed the pinned
+  Hugging Face suite. The final pushed revision is checked once more below.
+
+**M4 gate: passed.** The service, benchmark evidence, raw-data audit, non-root CPU
+container, CI, operations guide, architecture record, and portfolio evidence are
+complete. The two known upstream Starlette/AnyIO deprecation warnings remain; they
+do not affect the verified behavior.
