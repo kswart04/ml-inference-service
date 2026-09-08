@@ -385,3 +385,52 @@ fixture to unique ASCII identifiers and the regression gate passed.
 
 Status: measurements, CI execution, charts, clean-checkout verification, and final
 report are still pending; this section does not mark M4 complete.
+
+## 2026-09-08 — M4 repeated CPU measurements and reporting
+
+**Purpose:** compare every policy for both real models with visible failures and
+client-validity evidence.
+
+- Ran three 60-second repetitions for each model/policy at three pilot-selected
+  rates: 54 steady intervals total. Ran paired 15-second steady/burst checks at
+  custom 800 and DistilBERT 80 requests/sec: 36 additional intervals.
+- Retained compact experiment reports, workload/token lengths, summary tables,
+  SVG/PNG charts, source/lock/artifact fingerprints, and resource samples. Raw
+  per-request JSONL remains compressed under ignored `benchmarks/raw`.
+- Added `benchmarks.audit` and a regression fixture. It reconciled every intended
+  arrival/outcome across all 90 raw logs and verified final pending/active/client
+  work was zero.
+- Custom single and immediate completed every valid steady arrival at 800 req/s,
+  with mean repetition p95 of 1.15 and 1.12 ms. Immediate mean batch size remained
+  1.0. Custom 1,600 and all custom bursts were client-invalid and are not capacity claims.
+- DistilBERT single at 80 req/s completed every arrival at mean p95 27.20 ms. At
+  160 req/s it averaged 93.0 successful req/s but missed the error/latency target.
+  Immediate/timed full batches cost about 158 ms per forward versus 10 ms single,
+  consistent with padding the 4–256-token mixed input set.
+- At mean 80 req/s, DistilBERT 5× bursts were client-valid. Single had 0.14%
+  unsuccessful arrivals and p95 332.25 ms; immediate/timed rejected about 39% and
+  had p95 above 800 ms. None met the frozen 100 ms target during bursts.
+
+**Limitations:** client-invalid runs are plotted with crosses and excluded from
+capacity conclusions. The same host ran client and server sequentially, experiment
+order was not randomized, only one CPU/thread configuration was measured, and no
+GPU run is claimed. These results apply to the authored mixed-length workload.
+
+## 2026-09-08 — M4 container, CI, demo, and portfolio documentation
+
+**Purpose:** make the local project reviewable from setup through overload behavior.
+
+- Added a non-root CPU Dockerfile, allowlisted build context, health check, fake
+  default, and explicit real-model extras with read-only artifact mounts.
+- Configured Linux PyTorch from the official CPU index. CI exposed that custom-only
+  safetensors export needs explicit NumPy and that owner-only weights need read
+  permission for container UID 10001; both dependencies/boundaries are documented.
+- Added pinned-action CI jobs for offline checks, strict typing plus custom training,
+  fake/custom container HTTP smoke, and manual pinned-Hugging-Face tests.
+- GitHub verified the fake/custom containers and all standard jobs. The manual
+  Hugging Face job also passed on Linux CPU after local-only test flags were enabled.
+- Added concise operation, demo, methodology, portfolio-evidence, architecture,
+  decisions, and learning documentation. The repository remains private and has no
+  owner-selected code license or public deployment claim.
+
+Final clean-checkout and post-integration checks remain before marking the M4 gate.

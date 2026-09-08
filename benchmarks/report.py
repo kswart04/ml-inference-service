@@ -114,50 +114,64 @@ def charts(rows: list[dict[str, Any]], output: Path) -> None:
     import matplotlib.pyplot as plt
 
     colors = {"single": "#26547c", "immediate": "#008577", "timed": "#b45200"}
-    fig, axes = plt.subplots(2, 3, figsize=(13, 7), constrained_layout=True)
-    for i, adapter in enumerate(("custom", "huggingface")):
+    adapters = sorted({row["adapter"] for row in rows})
+    has_bursts = any(row["burst"] for row in rows)
+    fig, axes = plt.subplots(
+        len(adapters), 3, figsize=(13, 3.5 * len(adapters)), constrained_layout=True, squeeze=False
+    )
+    for i, adapter in enumerate(adapters):
         for policy, color in colors.items():
-            selected = sorted(
-                [
-                    r
-                    for r in rows
-                    if r["adapter"] == adapter and r["policy"] == policy and not r["burst"]
-                ],
-                key=lambda r: r["rate"],
-            )
-            if not selected:
-                continue
-            rates = [r["rate"] for r in selected]
-            for j, (key, label) in enumerate(
-                (
-                    ("successful_rps_mean", "Successful requests/sec"),
-                    ("p95_ms_mean", "Successful p95 latency (ms)"),
-                    ("unsuccessful_percent", "Unsuccessful intended arrivals (%)"),
+            for burst in [False, True] if has_bursts else [False]:
+                selected = sorted(
+                    [
+                        r
+                        for r in rows
+                        if r["adapter"] == adapter and r["policy"] == policy and r["burst"] == burst
+                    ],
+                    key=lambda r: r["rate"],
                 )
-            ):
-                values = [r[key] for r in selected]
-                axes[i, j].plot(rates, values, "o-", color=color, label=policy)
-                for rate, value, row in zip(rates, values, selected, strict=True):
-                    if row["invalid_client_runs"]:
-                        axes[i, j].scatter(rate, value, marker="x", s=150, color="black", zorder=4)
-                axes[i, j].set(
-                    xlabel="Intended requests/sec",
-                    ylabel=label,
-                    title=f"{adapter} · steady traffic",
+                if not selected:
+                    continue
+                rates = [r["rate"] * (1.002 if burst else 0.998) for r in selected]
+                traffic = "burst" if burst else "steady"
+                for j, (key, label) in enumerate(
+                    (
+                        ("successful_rps_mean", "Successful requests/sec"),
+                        ("p95_ms_mean", "Successful p95 latency (ms)"),
+                        ("unsuccessful_percent", "Unsuccessful intended arrivals (%)"),
+                    )
+                ):
+                    values = [r[key] for r in selected]
+                    axes[i, j].plot(
+                        rates,
+                        values,
+                        "o" + ("--" if burst else "-"),
+                        color=color,
+                        label=f"{policy} · {traffic}",
+                    )
+                    for rate, value, row in zip(rates, values, selected, strict=True):
+                        if row["invalid_client_runs"]:
+                            axes[i, j].scatter(
+                                rate, value, marker="x", s=150, color="black", zorder=4
+                            )
+                    axes[i, j].set(
+                        xlabel="Intended requests/sec",
+                        ylabel=label,
+                        title=f"{adapter} · "
+                        + ("burst comparison" if has_bursts else "steady traffic"),
+                    )
+                    axes[i, j].grid(alpha=0.2)
+                axes[i, 0].errorbar(
+                    rates,
+                    [r["successful_rps_mean"] for r in selected],
+                    yerr=[
+                        [r["successful_rps_mean"] - r["successful_rps_min"] for r in selected],
+                        [r["successful_rps_max"] - r["successful_rps_mean"] for r in selected],
+                    ],
+                    fmt="none",
+                    color=color,
+                    capsize=4,
                 )
-                axes[i, j].grid(alpha=0.2)
-            means = [r["successful_rps_mean"] for r in selected]
-            axes[i, 0].errorbar(
-                rates,
-                means,
-                yerr=[
-                    [r["successful_rps_mean"] - r["successful_rps_min"] for r in selected],
-                    [r["successful_rps_max"] - r["successful_rps_mean"] for r in selected],
-                ],
-                fmt="none",
-                color=color,
-                capsize=4,
-            )
         axes[i, 1].axhline(100, color="gray", linestyle="--", linewidth=1)
         axes[i, 1].set_yscale("log")
         axes[i, 2].axhline(1, color="gray", linestyle="--", linewidth=1)

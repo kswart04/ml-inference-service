@@ -3,10 +3,11 @@
 An educational text classification backend with a custom batching scheduler
 planned across incremental milestones. See [the requirements](docs/REQUIREMENTS.md).
 
-**Current milestone: M3.** The shared scheduler serves the deterministic fake,
+**Current milestone: M4 release verification.** The shared scheduler serves the deterministic fake,
 pinned Hugging Face DistilBERT, and a small PyTorch classifier trained locally from
 initialization. The custom model achieved 68.82% held-out accuracy against a 50.11%
-majority baseline. Serving performance experiments remain M4 work.
+majority baseline. Repeated CPU measurements, charts, containers, CI, and a local
+overload demo are implemented and documented.
 
 ## Development setup
 
@@ -118,7 +119,7 @@ Package installation requires network access initially; tests run offline afterw
 Strict type checking of all code requires the optional ML libraries' type information:
 
 ```bash
-uv run --extra hf --extra custom mypy
+uv run --extra hf --extra custom --extra benchmark mypy
 ```
 
 The default gate excludes downloaded-model tests. After preparation, run the
@@ -167,11 +168,19 @@ weights reproduce exactly. Configuration examples are in `configs/custom.env`.
 See the [custom model card](docs/models/CUSTOM_SENTIMENT.md) for the split recipe,
 architecture, exact hashes, measured hardware, quality limits, and reproduction.
 
-## Following milestones
+## Benchmark smoke
 
-| Milestone | Work remaining |
-| --- | --- |
-| M4 | Benchmarks and plots, Docker, CI, clean-checkout release verification, demo |
+M4 includes the full repeated CPU matrix. This shorter command verifies the driver:
+
+```bash
+uv run --extra benchmark python -m benchmarks.experiment \
+  --adapter fake --rates 50 --duration 2 --repetitions 1 \
+  --output artifacts/benchmark-smoke.json
+```
+
+This is a short correctness smoke. See the [benchmark methodology](docs/BENCHMARKS.md)
+for measured-run settings and the [operating guide](docs/OPERATIONS.md) for CPU
+Docker commands, CI coverage, and a real-model overload demo.
 
 Benchmark commands will be documented when they exist. CPU is the
 verified baseline; CUDA behavior is implemented but has not been tested on this host.
@@ -184,5 +193,7 @@ verified baseline; CUDA behavior is implemented but has not been tested on this 
 - [Learning notes](docs/LEARNING_NOTES.md): concepts behind each completed milestone.
 - [Hugging Face adapter card](docs/models/HUGGINGFACE_SST2.md): provenance and behavior.
 - [Custom model card](docs/models/CUSTOM_SENTIMENT.md): training and held-out results.
+- [CPU experiments](docs/BENCHMARKS.md): workload, validity rules, and reproduction.
+- [Operation and demo](docs/OPERATIONS.md): containers, CI, and overload behavior.
 
 Repository licensing has not yet been selected by the owner.

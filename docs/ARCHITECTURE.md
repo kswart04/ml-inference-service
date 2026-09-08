@@ -1,6 +1,6 @@
 # Architecture
 
-Status: M3, with two real adapters using the M1 scheduler. The final design remains specified in
+Status: M4 release candidate, with two real adapters using the shared scheduler. The design is specified in
 [REQUIREMENTS.md](REQUIREMENTS.md).
 
 ## Package structure
@@ -15,8 +15,9 @@ Status: M3, with two real adapters using the M1 scheduler. The final design rema
 | Verification | `tests/` | API boundaries, lifecycle, scheduling, overload and failures |
 | Training | `training/` | Pinned dataset preparation, CPU training, frozen-export evaluation |
 | Preparation | `scripts/` | Explicit Hugging Face snapshot retrieval |
+| Experiments | `benchmarks/` | Bounded open-loop driver, local server orchestration, reports and plots |
 
-Benchmarks remain M4 work.
+M4 experiment methods and measured revisions are documented in [BENCHMARKS.md](BENCHMARKS.md).
 
 ## Request flow
 
@@ -136,3 +137,34 @@ pending depth, active batches, actual batch size, request duration, queue wait,
 complete adapter-call duration, adapter-reported preprocessing/forward/postprocessing
 durations, and failures. Fake phase values are zero; the real adapter records each
 phase using the same instrumentation for every policy.
+
+## Experiment boundaries
+
+```mermaid
+flowchart LR
+    A[Absolute intended arrivals] --> B{Client budget and lag}
+    B -->|cannot send| C[Recorded client drop]
+    B -->|send| D[Loopback HTTP]
+    D --> E{Server admission}
+    E -->|full| F[HTTP 429]
+    E -->|accepted| G[Queue and one active model batch]
+    G --> H[Response or deadline]
+    C --> I[Raw timing and outcome records]
+    F --> I
+    H --> I
+    G --> J[Prometheus and process samples]
+    I --> K[Validity checks, tables, charts]
+    J --> K
+```
+
+The driver bounds tasks before creating them; the HTTP connection limit matches
+that budget so the connection pool is not an intentional hidden queue. It records
+actual send lag and never waits for responses to set the next intended arrival.
+Server and client measurements remain separate. A client-invalid run cannot establish
+server capacity even when its successful requests appear fast.
+
+The experiment runner uses a separate single-process server for each policy and
+waits for a drained server between intervals. Model loading, warmup, and preparation
+are excluded from the measured interval. The raw file records client times; metrics
+describe internal queue and adapter phases. These are related but different clocks
+and definitions, so the report does not equate forward time with end-to-end latency.

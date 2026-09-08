@@ -94,3 +94,27 @@ sentiment system. The test confusion matrix exposes 103 missed positive examples
 and test accuracy falls below validation. Documenting that gap is more useful than
 repeatedly tuning against the same test set. Serving latency and throughput still
 need separate M4 experiments.
+
+## M4 — Treat the experiment client as part of the measurement
+
+A rate of 800 requests/sec means an intended arrival every 1.25 ms. Waiting for a
+response before scheduling the next request would change the experiment when the
+server slows. Absolute schedules preserve intended load, but the client must still
+report how late it sent and whether it ran out of its own outstanding budget.
+
+The timed window bounds deliberate collection, not response latency. Queue wait,
+tokenization, model computation, and network overhead all contribute. A full batch
+can have worse CPU cost when one long sentence forces many short sentences to pad
+to 256 tokens. This explains why batching should be measured instead of assumed
+to improve performance.
+
+Rejections and client drops mean different things. HTTP 429 demonstrates the
+server's admission rule; a client capacity drop means the generator never sent
+that arrival. Neither should vanish from the denominator. A low latency percentile
+for successful requests is only useful alongside those failures and the offered rate.
+
+Clean optional environments matter too: a dependency installed for Transformers
+can mask a missing dependency in custom-only training. A container also runs under
+a different UID, so a valid local artifact can still fail on file permissions.
+CI now exercises these boundaries directly rather than treating a Dockerfile as
+proof that the container works.

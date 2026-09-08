@@ -1,0 +1,54 @@
+{
+  "cpu_name": "Apple M5 Pro",
+  "inputs": [
+    {
+      "characters": 10,
+      "custom_tokens_after_truncation": 1,
+      "hf_tokens_including_specials_after_truncation": 4,
+      "index": 0,
+      "utf8_bytes": 10
+    },
+    {
+      "characters": 52,
+      "custom_tokens_after_truncation": 9,
+      "hf_tokens_including_specials_after_truncation": 12,
+      "index": 1,
+      "utf8_bytes": 52
+    },
+    {
+      "characters": 76,
+      "custom_tokens_after_truncation": 14,
+      "hf_tokens_including_specials_after_truncation": 18,
+      "index": 2,
+      "utf8_bytes": 76
+    },
+    {
+      "characters": 212,
+      "custom_tokens_after_truncation": 36,
+      "hf_tokens_including_specials_after_truncation": 42,
+      "index": 3,
+      "utf8_bytes": 212
+    },
+    {
+      "characters": 816,
+      "custom_tokens_after_truncation": 144,
+      "hf_tokens_including_specials_after_truncation": 158,
+      "index": 4,
+      "utf8_bytes": 816
+    },
+    {
+      "characters": 1440,
+      "custom_tokens_after_truncation": 256,
+      "hf_tokens_including_specials_after_truncation": 256,
+      "index": 5,
+      "utf8_bytes": 1440
+    }
+  ],
+  "versions": {
+    "httpx": "0.28.1",
+    "matplotlib": "3.11.1",
+    "psutil": "7.2.2",
+    "torch": "2.14.0",
+    "transformers": "5.16.1"
+  }
+}

@@ -53,6 +53,9 @@ async def experiment(args: argparse.Namespace) -> None:
     output: Path = args.output
     initial_source_hashes = await asyncio.to_thread(source_hashes)
     initial_lock_hash = sha256(Path("uv.lock"))
+    initial_git_commit = (
+        await asyncio.to_thread(subprocess.check_output, ["git", "rev-parse", "HEAD"], text=True)
+    ).strip()
     if await asyncio.to_thread(output.exists):
         raise ValueError("Use a fresh output path")
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -178,11 +181,7 @@ async def experiment(args: argparse.Namespace) -> None:
         else "huggingface-sst2/inference-service-manifest.json"
     )
     provenance = {
-        "git_commit": (
-            await asyncio.to_thread(
-                subprocess.check_output, ["git", "rev-parse", "HEAD"], text=True
-            )
-        ).strip(),
+        "git_commit_at_start": initial_git_commit,
         "lock_sha256": initial_lock_hash,
         "source_sha256": initial_source_hashes,
         "platform": platform.platform(),

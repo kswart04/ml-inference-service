@@ -199,3 +199,45 @@ neighbors have different lengths. A strict manifest catches changed artifacts.
 provenance report includes elapsed time, so a deterministic retraining can produce
 the same weights but a different version. Integrity hashes detect changes; they do
 not establish authenticity of arbitrary untrusted exports. Paths remain operator-owned.
+
+## D015 — Open-loop load with explicit client validity (2026-09-07)
+
+**Decision:** schedule absolute intended arrivals with a bounded outstanding budget,
+record late/capacity drops, and reject server-capacity conclusions from client-invalid
+runs. Report successful latency and throughput with every outcome count.
+
+**Reason:** a closed-loop client silently reduces offered traffic when responses slow,
+and a saturated generator can look like server capacity. Failed requests cannot
+disappear behind successful-only percentiles.
+
+**Consequence:** high custom-model loads may remain inconclusive even when the
+service produces no errors. Raw timings and invalid results are retained. The
+100 ms p95 / 1% failure target was frozen after pilots; it is a project target.
+
+## D016 — Measure mixed-length costs before optimizing (2026-09-07)
+
+**Decision:** compare all three policies on identical deterministic mixed-length
+inputs with fixed CPU thread counts, then investigate a small batch/window sweep.
+Do not add length-aware scheduling during the baseline experiment.
+
+**Reason:** longest-item padding can turn queue growth into more expensive batches.
+Waiting can also increase latency for cheap models. A batching implementation is
+correct when it preserves results and lifecycle semantics, even if it loses on a
+particular workload.
+
+**Consequence:** the portfolio reports measured counterexamples and client limits.
+Length-aware grouping remains an optional extension with a separate fairness design.
+
+## D017 — CPU container and clean optional-dependency checks (2026-09-07)
+
+**Decision:** default to a lightweight non-root fake image, allow explicit custom/HF
+extras, mount models read-only, and resolve Linux PyTorch from its official CPU index.
+Verify fake and real custom container HTTP paths in CI.
+
+**Reason:** CPU operation should not require a GPU or download CUDA runtimes. A
+clean custom-only installation catches dependencies accidentally provided by another
+extra, as demonstrated by the safetensors/NumPy export dependency.
+
+**Consequence:** CUDA requires a separately resolved environment. Host weight-file
+permissions must permit the container UID to read them. The Python dependency lock
+is reproducible; the OS base tag can receive patches and is not an immutable digest.

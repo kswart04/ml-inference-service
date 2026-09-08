@@ -42,9 +42,9 @@ read access to that public-dataset model file for the container's different UID.
 The image loads them locally during startup. It never fetches weights on a request.
 Linux's lock uses PyTorch's CPU wheel index, avoiding CUDA library downloads.
 
-The fake container build and live HTTP prediction are verified in CI. Custom/HF
-container configurations are provided for local use; their container execution is
-not yet claimed as verified. CUDA is an untested extension: the committed Linux
+The fake and custom container builds and live HTTP predictions are verified in CI,
+including read-only custom artifacts. The HF container configuration is provided
+but its container execution is not claimed as verified. CUDA is an untested extension: the Linux
 environment is deliberately CPU-only. A GPU deployment requires an explicitly
 resolved compatible CUDA wheel/driver environment and a new lock/benchmark record.
 
@@ -98,6 +98,11 @@ A hung worker makes readiness false and requires process restart. A process
 supervisor or Docker's stop timeout can terminate the entire process after its
 grace allowance. This service does not supervise or automatically restart hung
 worker threads.
+
+Implementation references: the official [uv Docker guide](https://docs.astral.sh/uv/guides/integration/docker/),
+[uv CI guide](https://docs.astral.sh/uv/guides/integration/github/), and
+[PyTorch index configuration](https://docs.astral.sh/uv/guides/integration/pytorch/).
+The concrete commands and verification above describe this repository's implementation.
 
 Health and metrics are local development endpoints. There is no authentication,
 hosted public demo, or automatic scaling. The repository remains private.
