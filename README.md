@@ -196,4 +196,4 @@ verified baseline; CUDA behavior is implemented but has not been tested on this 
 - [CPU experiments](docs/BENCHMARKS.md): workload, validity rules, and reproduction.
 - [Operation and demo](docs/OPERATIONS.md): containers, CI, and overload behavior.
 
-Repository licensing has not yet been selected by the owner.
+Repository licensing has not yet been selected.
