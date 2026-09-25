@@ -1,4 +1,4 @@
-"""Versioned, framework-independent text and artifact contracts."""
+"""Tokenizer configuration, vocabulary encoding, and artifact versioning."""
 
 from __future__ import annotations
 

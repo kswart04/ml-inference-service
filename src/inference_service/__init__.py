@@ -1,1 +1,1 @@
-"""Educational text inference service."""
+"""Text classification API and batching scheduler."""

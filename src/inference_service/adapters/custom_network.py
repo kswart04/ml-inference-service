@@ -1,4 +1,4 @@
-"""Small classifier initialized and trained locally; imported only for custom models."""
+"""PyTorch sentiment network shared by training and the custom adapter."""
 
 from typing import cast
 

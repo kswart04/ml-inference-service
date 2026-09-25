@@ -1,1 +1,1 @@
-"""Reproducible local CPU experiments; not part of the serving package."""
+"""Load generation, CPU benchmarks, and reports."""

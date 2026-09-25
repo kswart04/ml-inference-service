@@ -17,8 +17,7 @@ curl --fail http://127.0.0.1:8000/health/ready
 The process binds to all interfaces *inside* the container so Docker port forwarding
 works; the host port above is bound only to loopback. Stop with Ctrl-C or
 `docker stop --time 20 inference-service`. The image health check uses readiness.
-The Python base tag receives patch updates; this is a locked Python dependency
-build, not a claim of bit-for-bit immutable OS image reconstruction.
+Python dependencies are locked, but the base image tag can receive OS patches.
 
 For a prepared custom model, build its dependency extra and mount the local export
 read-only. Run from the repository root after training:
@@ -44,11 +43,11 @@ Linux's lock uses PyTorch's CPU wheel index, avoiding CUDA library downloads.
 
 The fake and custom container builds and live HTTP predictions are verified in CI,
 including read-only custom artifacts. The HF container configuration is provided
-but its container execution is not claimed as verified. CUDA is an untested extension: the Linux
-environment is deliberately CPU-only. A GPU deployment requires an explicitly
-resolved compatible CUDA wheel/driver environment and a new lock/benchmark record.
+but has not been tested in a container. The Linux environment uses CPU-only
+PyTorch. CUDA requires compatible wheels and drivers, a separate lockfile, and
+new tests and benchmarks.
 
-## CI boundaries
+## CI jobs
 
 `.github/workflows/ci.yml` runs on pushes to `main`, pull requests, and manual dispatch.
 Actions are pinned by commit and receive read-only repository permission.
@@ -56,7 +55,7 @@ Actions are pinned by commit and receive read-only repository permission.
 - `offline`: locked lightweight dependencies, Ruff lint/format, default fake/data/
   load-driver tests. No model or dataset is downloaded by this job.
 - `types-and-custom`: optional ML/benchmark dependencies, strict mypy, pinned dataset
-  preparation, bounded training, and five explicit custom artifact tests on macOS.
+  preparation, small-profile training, and five custom artifact tests on macOS.
 - `container`: Linux Docker build, readiness, and an actual HTTP prediction.
 - `huggingface`: manual opt-in only; prepares the pinned snapshot and runs six
   model tests with offline flags. Run with
@@ -86,9 +85,9 @@ HTTP 429 is a bounded-queue rejection, not a crash. Readiness should remain heal
 the runner waits for pending and active work to clear after each load interval.
 Raw request timings and server logs stay under `benchmarks/raw/demo/`.
 
-Do not promise batching will improve this workload. Long and short inputs mixed
-in a batch incur padding cost, and deliberate waiting can increase low-load latency.
-The demo is a correctness demonstration; the repeated M4 report is performance evidence.
+Mixing long and short inputs adds padding work, and waiting to collect a batch can
+increase latency at low load. This short demo shows batching and overload behavior.
+Use the repeated runs in [BENCHMARKS.md](BENCHMARKS.md) to compare performance.
 
 ## Recovery and resource boundaries
 
@@ -99,10 +98,10 @@ supervisor or Docker's stop timeout can terminate the entire process after its
 grace allowance. This service does not supervise or automatically restart hung
 worker threads.
 
-Implementation references: the official [uv Docker guide](https://docs.astral.sh/uv/guides/integration/docker/),
-[uv CI guide](https://docs.astral.sh/uv/guides/integration/github/), and
-[PyTorch index configuration](https://docs.astral.sh/uv/guides/integration/pytorch/).
-The concrete commands and verification above describe this repository's implementation.
+Implementation references: the official [uv Docker
+guide](https://docs.astral.sh/uv/guides/integration/docker/), [uv CI
+guide](https://docs.astral.sh/uv/guides/integration/github/), and [PyTorch index
+configuration](https://docs.astral.sh/uv/guides/integration/pytorch/).
 
 Health and metrics are local development endpoints. There is no authentication,
 hosted public demo, or automatic scaling. The repository remains private.

@@ -1,4 +1,4 @@
-"""A reproducible test fixture, not a trained sentiment model."""
+"""Deterministic sentiment scores for scheduler and API tests."""
 
 import re
 from collections.abc import Sequence

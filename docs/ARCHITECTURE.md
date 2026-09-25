@@ -1,7 +1,7 @@
 # Architecture
 
-Status: M4 complete, with two real adapters using the shared scheduler. The design is specified in
-[REQUIREMENTS.md](REQUIREMENTS.md).
+Both real-model adapters use the same scheduler. The original design and acceptance
+tests are in [REQUIREMENTS.md](REQUIREMENTS.md).
 
 ## Package structure
 
@@ -17,7 +17,7 @@ Status: M4 complete, with two real adapters using the shared scheduler. The desi
 | Preparation | `scripts/` | Explicit Hugging Face snapshot retrieval |
 | Experiments | `benchmarks/` | Bounded open-loop driver, local server orchestration, reports and plots |
 
-M4 experiment methods and measured revisions are documented in [BENCHMARKS.md](BENCHMARKS.md).
+Benchmark methods and measured revisions are documented in [BENCHMARKS.md](BENCHMARKS.md).
 
 ## Request flow
 
@@ -89,16 +89,17 @@ fullness alone does not change readiness. Liveness never invokes inference.
 
 ## Model identity and fake adapter
 
-One server session configures either `fake-sentiment/v1` or
-`huggingface-sentiment/hf-sst2-714eb0fa-max256`. Scheduler instances are per
-model/version; isolated dual-version tests prove their queues and calls cannot mix.
+Each server session loads one adapter: `fake-sentiment/v1`,
+`huggingface-sentiment/hf-sst2-714eb0fa-max256`, or `custom-sentiment` with its
+exported version. Each model/version has its own scheduler; tests with two versions
+check that queues and calls stay separate.
 Concurrent multi-model service is not enabled.
 
 The fake splits lowercase text into ASCII letter tokens and counts a documented
-positive/negative word set. It returns fixed scores 0.8, 0.2, or 0.5. These are test
-fixtures, not learned or calibrated probabilities. Its batch contract preserves
-order for 1–8 inputs. Because there is no neural network, M1 proves batching
-mechanics rather than a real batched forward pass.
+positive/negative word set. It returns fixed scores 0.8, 0.2, or 0.5. These are
+test fixtures, not learned or calibrated probabilities. Its batch contract
+preserves order for 1–8 inputs. The fake adapter tests queueing and result
+routing without running a neural network.
 
 The Hugging Face adapter validates a locally generated integrity manifest before
 loading. It uses the pinned DistilBERT SST-2 safetensors artifact, pads to the longest
@@ -138,7 +139,7 @@ complete adapter-call duration, adapter-reported preprocessing/forward/postproce
 durations, and failures. Fake phase values are zero; the real adapter records each
 phase using the same instrumentation for every policy.
 
-## Experiment boundaries
+## Benchmark execution
 
 ```mermaid
 flowchart LR
@@ -158,13 +159,13 @@ flowchart LR
 ```
 
 The driver bounds tasks before creating them; the HTTP connection limit matches
-that budget so the connection pool is not an intentional hidden queue. It records
+that budget so the connection pool is not an extra queue. It records
 actual send lag and never waits for responses to set the next intended arrival.
 Server and client measurements remain separate. A client-invalid run cannot establish
 server capacity even when its successful requests appear fast.
 
 The experiment runner uses a separate single-process server for each policy and
-waits for a drained server between intervals. Model loading, warmup, and preparation
-are excluded from the measured interval. The raw file records client times; metrics
-describe internal queue and adapter phases. These are related but different clocks
-and definitions, so the report does not equate forward time with end-to-end latency.
+waits for a drained server between intervals. Model loading, warmup, and
+preparation are excluded from the measured interval. The raw file records client
+times; metrics describe internal queue and adapter phases. Forward time covers
+only model execution; client latency also includes queueing and HTTP overhead.

@@ -1,4 +1,4 @@
-"""Audit retained raw outcomes and expose accepted-input mix alongside aggregate reports."""
+"""Check aggregate results against raw arrivals and count outcomes by input."""
 
 import argparse
 import gzip

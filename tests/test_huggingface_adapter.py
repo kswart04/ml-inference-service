@@ -75,7 +75,7 @@ def test_adapter_uses_one_forward_pass_for_a_batch(
     adapter: HuggingFaceSentimentAdapter, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls = 0
-    model = adapter._model  # noqa: SLF001 - instrument the real forward boundary.
+    model = adapter._model  # noqa: SLF001 - count model forward calls.
     original = model.forward
 
     def recording_forward(*args: Any, **kwargs: Any) -> Any:
@@ -129,7 +129,7 @@ async def test_real_adapter_uses_shared_scheduler_batch(prepared_dir: Path) -> N
     )
     await scheduler.start()
     calls = 0
-    model = adapter._model  # noqa: SLF001 - instrument the real forward boundary.
+    model = adapter._model  # noqa: SLF001 - count model forward calls.
     original = model.forward
 
     def recording_forward(*args: Any, **kwargs: Any) -> Any:

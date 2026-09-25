@@ -1,26 +1,19 @@
 # Work log
 
-Record each section of work here: purpose, files or tools changed, verification,
-and remaining limitations. Keep requirements in `REQUIREMENTS.md` authoritative;
-this log records observed progress rather than changing release gates.
+Development history, checks run, and issues found. Status notes describe the
+project at the time of each entry; M4 completion is recorded at the end.
 
 ## 2026-09-06 — Repository setup
 
-**Purpose:** establish a private GitHub repository before implementing M0.
-
 - Inspected the workspace: only `docs/REQUIREMENTS.md` was present; no local Git
   repository or existing remote was found.
-- Checked parent and project locations for `AGENTS.md`; none was found.
 - Found Git and Homebrew Python 3.14.7. GitHub CLI, uv, and a configured Git commit
   identity were absent.
 - Installed GitHub CLI 2.100.0 and uv 0.12.10 through Homebrew with approval.
 - Completed GitHub browser authentication as `kswart04`.
 - Added `.gitignore` for environments, secrets, downloaded artifacts, datasets,
   and bulky benchmark output.
-- The owner explicitly requested a private GitHub repository. Repository name:
-  `ml-inference-service`, subject to checking availability in the signed-in account.
-- Code licensing remains an owner decision; no license has been selected.
-
+- No code license was selected.
 - Created the private repository at
   <https://github.com/kswart04/ml-inference-service> after checking availability.
 - Initialized local Git on `main`. Configured repository-local commit identity
@@ -32,8 +25,6 @@ commit `95595cd` was pushed to `origin/main`. GitHub reports visibility `PRIVATE
 and default branch `main` for `kswart04/ml-inference-service`.
 
 ## 2026-09-06 — M0 package and tooling
-
-**Purpose:** make the project installable and establish baseline checks.
 
 - Added the src-based `inference_service` package, Hatchling build configuration,
   Python 3.12 baseline, uv manifest and lockfile.
@@ -49,8 +40,6 @@ summarized in [D002](DECISIONS.md#d002--python-312-and-locked-uv-environment-202
 
 ## 2026-09-06 — M0 contracts and fake adapter
 
-**Purpose:** define the boundary reusable by future schedulers and real models.
-
 - Added typed input, binary prediction, scores, immutable identity and metadata.
 - Added the adapter protocol for load, validate, compatibility, batch prediction,
   and close.
@@ -59,13 +48,12 @@ summarized in [D002](DECISIONS.md#d002--python-312-and-locked-uv-environment-202
 - Added `fake-sentiment/v1`, a deterministic lexical fixture; documented its fixed
   scores, tie behavior, batch size contract, and lack of model-quality meaning.
 
-**Verification:** tests prove ordered/repeated output, fake single/batch parity,
+**Verification:** tests cover ordered/repeated output, fake single/batch parity,
 load/close behavior, batch-size rejection, version distinction, and immutable
-identity. This is not T12 real-model parity or T08 scheduler isolation completion.
+identity. Real-model parity (T12) and scheduler isolation (T08) were left for
+later milestones.
 
 ## 2026-09-06 — M0 API, configuration, and lifecycle
-
-**Purpose:** provide a runnable local API with useful validation boundaries.
 
 - Added `POST /v1/predict`, `GET /v1/models`, liveness and readiness endpoints.
 - Required explicit model versions and rejected unknown request fields.
@@ -74,7 +62,7 @@ identity. This is not T12 real-model parity or T08 scheduler isolation completio
 - Added safe, consistent validation, lookup, unavailability, and internal-error
   responses; preserved HTTP method error headers.
 - Added validated environment settings and FastAPI lifespan loading/cleanup.
-- Kept prediction deliberately inline with the cheap fake only; worker execution
+- Kept prediction inline with the cheap fake only; worker execution
   and scheduler lifecycle are M1 work, as explained in D004.
 
 **Verification:** API tests cover blank/invalid text, required fields, unknown
@@ -85,8 +73,6 @@ endpoints, model listing, and the README prediction example return 200. Ctrl-C
 produced application shutdown completion and server exit.
 
 ## 2026-09-06 — M0 documentation and final checks
-
-**Purpose:** document every section and make the next milestone understandable.
 
 - Added README setup/run/test commands, configuration, exact implemented scope,
   error behavior, and remaining milestones.
@@ -119,18 +105,15 @@ tests. Revisit the test client integration when developing M1's async suite;
 warnings have not been suppressed.
 
 **M0 gate: passed.** The service runs locally, fake prediction and invalid-input
-checks pass, and architecture/dependency choices are documented. This is a fresh
-environment verification of M0, not the full M4 clean-checkout release gate.
+checks pass, and architecture/dependency choices are documented. The full
+clean-checkout check was scheduled for M4.
 
 **Next: M1.** Implement bounded worker execution, all three policies, admission,
 deadlines, cancellation, shutdown/watchdog behavior, metrics, structured logs, and
 the applicable concurrency acceptance tests. Real adapters, training, benchmarks,
-Docker, CI, and final release documentation remain incomplete. No throughput or
-model-quality claims have been made.
+Docker, CI, and final release documentation remain incomplete.
 
 ## 2026-09-06 — M1 scheduler and execution ownership
-
-**Purpose:** add dynamic batching without introducing an unbounded executor backlog.
 
 - Added request envelopes and explicit pending/running/terminal lifecycle states.
 - Added one per-model FIFO pending deque, atomic admission, three policies, and
@@ -140,13 +123,11 @@ model-quality claims have been made.
 - Moved adapter load, prediction, and ordinary close off the event loop.
 - Added ordered result-count validation and event-loop-only future resolution.
 
-**Verification:** scheduler tests T01–T09 prove correlation, full/partial dispatch,
+**Verification:** scheduler tests T01–T09 cover correlation, full/partial dispatch,
 busy-worker window behavior, atomic capacity, pending cleanup, retained execution
 slots after running timeout, version isolation, and batch-wide error resolution.
 
 ## 2026-09-06 — M1 deadlines, overload, shutdown, and readiness
-
-**Purpose:** give every accepted or rejected request a bounded, explicit outcome.
 
 - Starts deadlines in raw-request middleware before body parsing and uses monotonic
   time for every duration.
@@ -156,19 +137,16 @@ slots after running timeout, version isolation, and batch-wide error resolution.
   reclaimed; running work retains its execution slot.
 - Added graceful draining, bounded remaining-waiter failure, fatal-worker signaling,
   and a watchdog that marks an overlong call unready.
-- Queue fullness deliberately leaves readiness true.
+- Queue fullness leaves readiness true.
 
-**Verification:** T10 proves blocked worker inference does not block liveness or the
-HTTP deadline. T11 proves shutdown refuses new work and bounds an active waiter.
+**Verification:** T10 checks that blocked worker inference does not block liveness or the
+HTTP deadline. T11 checks that shutdown refuses new work and bounds an active waiter.
 T14 covers loading/draining plus watchdog and fatal-worker readiness. T15 runs five
 success/cancellation/expiry waves without pending growth or an active batch leak.
 The overload API test fills one running plus one pending slot, verifies the next
 request gets 429 and `Retry-After: 1`, and confirms readiness remains 200.
 
 ## 2026-09-06 — M1 observability
-
-**Purpose:** expose request, queue, batch, latency, and failure behavior without
-unbounded labels or raw input.
 
 - Added per-app Prometheus collectors for admission decisions, terminal outcomes,
   pending depth, active batches, actual batch size, server duration, queue wait,
@@ -199,16 +177,14 @@ uv 0.12.10, Python 3.12.14.
 | Uvicorn Ctrl-C shutdown | draining and stopped events; clean process exit |
 
 The HTTP smoke used the timed policy with a 100 ms collection window solely to
-make the batch easy to observe. It is a functional demonstration, not a benchmark.
-No throughput or latency claim is derived from it.
+make the batch easy to observe. The long window made this unsuitable for
+performance measurement.
 
 The two existing upstream TestClient/AnyIO deprecation warnings remain visible and
 do not fail tests. Real adapters, training, benchmarks, Docker, CI, and portfolio
 release work remain later milestones.
 
 ## 2026-09-07 — M2 model selection and preparation
-
-**Purpose:** make external model acquisition explicit, pinned, and reproducible.
 
 - Verified the official repository API and model card: DistilBERT sequence
   classification, English SST-2/GLUE, Apache-2.0, safetensors available.
@@ -224,8 +200,6 @@ card. The network warning only concerned anonymous Hub rate limits.
 
 ## 2026-09-07 — M2 real adapter and runtime integration
 
-**Purpose:** run a genuine batch-capable model through the unchanged M1 scheduler.
-
 - Added local-only tokenizer and sequence-classification loading with safetensors
   and remote custom code disabled.
 - Validated artifact identity, hashes, tokenizer length, two labels, and label order.
@@ -239,29 +213,27 @@ card. The network warning only concerned anonymous Hub rate limits.
 
 **Verification:** a two-item CPU smoke predicted positive for “I loved this movie.”
 and negative for “This was terrible and boring.” This is a functional observation,
-not a quality metric. CPU load, warmup, and close succeeded.
+not a quality metric. CPU loading, warmup, and shutdown succeeded.
 
 ## 2026-09-07 — M2 correctness and offline restart
-
-**Purpose:** prove real batching, parity, HTTP sharing, and reproducible local reload.
 
 - Added six explicitly marked real-model tests.
 - T12 compares three variable-length inputs alone and batched at absolute score
   tolerance `1e-6`.
-- Forward instrumentation proves one three-item adapter batch uses one model call.
+- Forward-call counters verify one three-item adapter batch uses one model call.
 - The unchanged scheduler combines three real inputs and correlates expected labels.
 - Three independent HTTP requests share one forward call and expose batch metrics.
 - Two fresh adapters reload under Hub/Transformers offline flags and reproduce the
   same prediction within `1e-8`.
 
 **Verification:** `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 uv run --extra hf pytest
--m model` passed 6 tests with 48 deliberately deselected. The default offline gate
-passed 48 tests with 6 model tests deliberately deselected. Both retain the two
+-m model` passed 6 tests with 48 deselected. The default offline gate
+passed 48 tests with 6 model tests deselected. Both retain the two
 documented upstream TestClient/AnyIO warnings.
 
-**M2 gate: passed locally.** Independent HTTP requests demonstrably share one real
+**M2 gate: passed locally.** Independent HTTP requests share one real
 forward pass under the batch-capable configuration, and prepared artifacts reload
-offline. CUDA was not available and is not claimed as tested. Training, the custom
+offline. CUDA was unavailable, so it was not tested. Training, the custom
 adapter, quality evaluation, benchmarks, Docker, and CI remain later milestones.
 
 Fresh-copy verification installed the full locked `hf` environment, passed Ruff,
@@ -273,8 +245,6 @@ and completed application shutdown. This smoke is correctness evidence, not a
 performance measurement.
 
 ## 2026-09-07 — M3 dataset selection and preparation
-
-**Purpose:** establish a licensed, reproducible public sentiment dataset before fitting.
 
 - Verified the official UCI card and CC BY 4.0 license; recorded Kotzias attribution
   and DOI. Selected its 3,000-sentence benchmark within the requirements' permitted
@@ -292,8 +262,6 @@ Unicode record parsing, overwrite refusal, and changed-split rejection.
 
 ## 2026-09-07 — M3 training and artifact export
 
-**Purpose:** train a compact classifier from initialization and make its export inspectable.
-
 - Added a 64-dimensional embedding, explicitly masked mean, 64-unit ReLU hidden
   layer, and two-class output. Encoding is shared by training and serving.
 - Added bounded `small` and fuller `full` CPU profiles. Ran `small` with 1,200
@@ -304,16 +272,14 @@ Unicode record parsing, overwrite refusal, and changed-split rejection.
   training history and provenance, and an exact file-hash manifest. Added `custom`
   dependency extra and updated `uv.lock`. Data and weights stay ignored by Git.
 
-**Verification:** validation accuracy 76.46%, macro-F1 0.7631. Two independent runs
-produced byte-identical weights, vocabulary, and configuration. Measured training
-function durations were 0.892 and 0.718 seconds on Apple M5 Pro, 48 GiB RAM, CPU
-float32; imports, download, and final provenance/manifest serialization are excluded.
-Weight/config export is included. No full-profile
-or CUDA quality run is claimed. Exact hashes and method are in the model card.
+**Verification:** validation accuracy 76.46%, macro-F1 0.7631. Two independent
+runs produced byte-identical weights, vocabulary, and configuration. Measured
+training function durations were 0.892 and 0.718 seconds on Apple M5 Pro, 48 GiB
+RAM, CPU float32; imports, download, and final provenance/manifest serialization
+are excluded. Weight/config export is included. The full profile and CUDA were
+not tested. Exact hashes and method are in the model card.
 
 ## 2026-09-07 — M3 frozen held-out evaluation
-
-**Purpose:** measure the selected export without using test data for model selection.
 
 - Added separate `training.evaluate`, which verifies the dataset identity and test
   IDs against training/validation provenance before inference. Existing evaluation
@@ -321,13 +287,11 @@ or CUDA quality run is claimed. Exact hashes and method are in the model card.
 - Recorded accuracy, macro-F1, class distributions, confusion matrix, and a baseline
   fixed from training labels. Exported a local report and small checked-in aggregate.
 
-**Verification:** on 449 held-out examples, accuracy **68.82%** and macro-F1 **0.6811**
-beat the training-majority baseline of **50.11%** and **0.3338**. The validation/test
-gap and 103 false negatives are documented as limitations, not concealed by reruns.
+**Verification:** on 449 held-out examples, accuracy **68.82%** and macro-F1
+**0.6811** beat the training-majority baseline of **50.11%** and **0.3338**. The
+report records the validation/test gap and 103 false negatives.
 
 ## 2026-09-07 — M3 adapter and reload integration
-
-**Purpose:** prove a second real architecture works through the same scheduler.
 
 - Added `CustomSentimentAdapter`, content-derived versioning, strict artifact
   integrity/configuration checks, local warmup, inference-mode execution, longest
@@ -343,8 +307,6 @@ Parity tolerance is absolute `1e-6`. `git diff` confirms no scheduler-core chang
 
 ## 2026-09-07 — M3 developer setup and documentation
 
-**Purpose:** document every implemented section and preserve lightweight development.
-
 - Updated README training/evaluation/serving commands, settings, test selection,
   architecture, decisions D012–D014, learning notes, and the custom model card.
 - Recorded original code and lock hashes in the aggregate for the pre-commit run.
@@ -356,12 +318,12 @@ Parity tolerance is absolute `1e-6`. `git diff` confirms no scheduler-core chang
 **M3 gate: passed locally.** The selected model beats the held-out baseline, reloads
 independently, and integrates without scheduler-core changes. M4 benchmarks, plots,
 Docker, CI, and the release demo remain unimplemented. The known two upstream
-Starlette/AnyIO deprecation warnings persist; no model-test skip is counted as a pass.
+Starlette/AnyIO deprecation warnings persist; model-test skips are reported separately.
 
 Final M3 verification: **55 default tests passed**, **11 explicit real-model tests
 passed** (5 custom, 6 Hugging Face), Ruff lint/format passed, and strict mypy passed
 over 36 source/test/training files. The Unicode parser regression fixture initially
-generated non-ASCII identifiers that legitimately deduplicated; corrected the
+generated non-ASCII identifiers that deduplicated; corrected the
 fixture to unique ASCII identifiers and the regression gate passed.
 
 ## 2026-09-07 — M4 experiment tooling and release checks (in progress)
@@ -383,13 +345,10 @@ fixture to unique ASCII identifiers and the regression gate passed.
 - Driver tests verify absolute arrivals, burst counts, error retention, bounded
   outstanding requests, and explicit client-invalid results.
 
-Status: measurements, CI execution, charts, clean-checkout verification, and final
-report are still pending; this section does not mark M4 complete.
+At this point, measurements, CI execution, charts, clean-checkout verification, and
+the final report were still pending.
 
 ## 2026-09-08 — M4 repeated CPU measurements and reporting
-
-**Purpose:** compare every policy for both real models with visible failures and
-client-validity evidence.
 
 - Ran three 60-second repetitions for each model/policy at three pilot-selected
   rates: 54 steady intervals total. Ran paired 15-second steady/burst checks at
@@ -414,11 +373,9 @@ client-validity evidence.
 **Limitations:** client-invalid runs are plotted with crosses and excluded from
 capacity conclusions. The same host ran client and server sequentially, experiment
 order was not randomized, only one CPU/thread configuration was measured, and no
-GPU run is claimed. These results apply to the authored mixed-length workload.
+GPU runs were performed. These results apply to the authored mixed-length workload.
 
 ## 2026-09-08 — M4 container, CI, demo, and portfolio documentation
-
-**Purpose:** make the local project reviewable from setup through overload behavior.
 
 - Added a non-root CPU Dockerfile, allowlisted build context, health check, fake
   default, and explicit real-model extras with read-only artifact mounts.
@@ -430,8 +387,8 @@ GPU run is claimed. These results apply to the authored mixed-length workload.
 - GitHub verified the fake/custom containers and all standard jobs. The manual
   Hugging Face job also passed on Linux CPU after local-only test flags were enabled.
 - Added concise operation, demo, methodology, portfolio-evidence, architecture,
-  decisions, and learning documentation. The repository remains private and has no
-  owner-selected code license or public deployment claim.
+  decisions, and learning documentation. The repository remained private, without a
+  code license or public deployment.
 
 Final clean-checkout and post-integration checks remain before marking the M4 gate.
 
@@ -447,13 +404,10 @@ A stop event also handles cancellation swallowed inside ASGI disconnect probing;
 joining without that event initially hung the regression and was corrected.
 Tests cover pending expiry before the real timer, late completed inference, and
 parent-handler cancellation that promptly reclaims pending capacity with no child tasks.
-This review was isolated from the running benchmark snapshot; the report must
-identify the measured revision separately from the final corrected service.
+The benchmark ran on a separate snapshot. Its report identifies the measured
+revision, which predates this fix.
 
 ## 2026-09-08 — M4 release verification
-
-**Purpose:** prove the documented release can be reproduced from a clean checkout
-and close the milestone only after integrating the deadline review.
 
 - Repeated Ruff lint and format checks, strict mypy over 46 files, and the complete
   default suite after integration: **63 tests passed**.
@@ -463,13 +417,13 @@ and close the milestone only after integrating the deadline review.
   tests passed** against the newly exported artifact.
 - Synced the Hugging Face extra and ran its cached artifact fully offline; all **6
   Hugging Face adapter tests passed**. A missing artifact was also confirmed to
-  produce explicit skips rather than false passes.
+  produce skips with setup instructions.
 - Started a real fake-model server and exercised immediate, single, and timed
   policies through the benchmark driver. Each sent and received all 100 intended
   requests at 50 requests/sec, remained client-valid, and drained cleanly.
 - GitHub Actions had already passed the offline, custom-model, and non-root
   fake/custom container jobs, while the manual Linux CPU job passed the pinned
-  Hugging Face suite. The final pushed revision is checked once more below.
+  Hugging Face suite. The local checks above cover the integrated revision.
 
 **M4 gate: passed.** The service, benchmark evidence, raw-data audit, non-root CPU
 container, CI, operations guide, architecture record, and portfolio evidence are

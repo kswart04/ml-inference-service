@@ -1,1 +1,1 @@
-"""Bounded-cardinality logs and Prometheus metrics."""
+"""JSON logging and Prometheus metrics."""

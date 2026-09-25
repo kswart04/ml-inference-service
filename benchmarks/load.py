@@ -1,4 +1,4 @@
-"""Bounded open-loop HTTP load with explicit intended arrivals and client drops."""
+"""Send HTTP requests on a fixed schedule and record responses and client drops."""
 
 from __future__ import annotations
 
@@ -153,7 +153,7 @@ async def run_load(
         await asyncio.gather(*tasks)
     elapsed = time.perf_counter() - start
     after = metric_values((await client.get("/metrics")).text)
-    # Timed-out native work can outlive its HTTP waiter. Do not contaminate the next run.
+    # Wait for inference still running after HTTP timeouts before starting another run.
     recovery_started = time.perf_counter()
     while after.get("inference_pending_requests", 0.0) or after.get(
         "inference_active_batches", 0.0

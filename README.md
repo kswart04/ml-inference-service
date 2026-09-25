@@ -1,13 +1,13 @@
 # ML Inference Service
 
-An educational text classification backend with a custom batching scheduler
-planned across incremental milestones. See [the requirements](docs/REQUIREMENTS.md).
+A FastAPI text classification service with a custom batching scheduler. It supports
+single-request, immediate-batch, and timed-batch execution through the same API.
 
-**Current milestone: M4 complete.** The shared scheduler serves the deterministic fake,
-pinned Hugging Face DistilBERT, and a small PyTorch classifier trained locally from
-initialization. The custom model achieved 68.82% held-out accuracy against a 50.11%
-majority baseline. Repeated CPU measurements, charts, containers, CI, and a local
-overload demo are implemented and documented.
+Adapters are available for a deterministic test fixture, pinned Hugging Face
+DistilBERT, and a small PyTorch classifier trained from scratch. The custom model
+reached 68.82% held-out accuracy against a 50.11% majority baseline. The repository
+includes CPU benchmarks, Docker setup, CI, and an overload demo. See the
+[requirements](docs/REQUIREMENTS.md) for the original design and milestones.
 
 ## Development setup
 
@@ -37,12 +37,13 @@ Interactive API documentation is at <http://127.0.0.1:8000/docs>. Stop with Ctrl
 
 The example returns `label: positive` with a fixed positive score of `0.8`, a
 negative score of approximately `0.2`, and a new server request ID. These values
-are fake fixtures. [Adapter behavior](docs/ARCHITECTURE.md#model-identity-and-fake-adapter)
-describes the exact rule and tie handling.
+are fake fixtures. [Adapter
+behavior](docs/ARCHITECTURE.md#model-identity-and-fake-adapter) describes the
+exact rule and tie handling.
 
 ## Hugging Face model setup
 
-Install the optional ML dependencies and prepare the operator-pinned snapshot:
+Install the optional ML dependencies and download the pinned model snapshot:
 
 ```bash
 uv sync --locked --extra hf
@@ -93,7 +94,7 @@ invalid settings fail startup. The app does not automatically load a `.env` file
 Requests require both `model_id` and `model_version`; discover the configured
 identity at `/v1/models`. The default is `fake-sentiment/v1`.
 
-The API implements safe errors for oversized bodies (413), invalid input (422),
+The API returns errors for oversized bodies (413), invalid input (422),
 unknown models/versions (404), queue overload (429), unavailable workers/draining
 (503), deadlines (504), and execution errors (500). Responses carry `X-Request-ID`;
 prediction/error bodies include the same ID. No traceback or submitted text is
@@ -122,21 +123,22 @@ Strict type checking of all code requires the optional ML libraries' type inform
 uv run --extra hf --extra custom --extra benchmark mypy
 ```
 
-The default gate excludes downloaded-model tests. After preparation, run the
-explicit offline gate for both real models:
+The default test run excludes tests that require model artifacts. After preparing
+the artifacts, test both real models offline:
 
 ```bash
 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
 uv run --extra hf --extra custom pytest -m model
 ```
 
-Missing artifacts produce explicit skips. To test only one prepared adapter, pass
-`tests/test_huggingface_adapter.py` or `tests/test_custom_adapter.py` as well.
+Tests skip with a reason when artifacts are missing. To test only one prepared
+adapter, pass `tests/test_huggingface_adapter.py` or
+`tests/test_custom_adapter.py` as well.
 
 ## Train and serve the custom model
 
 From the repository root, prepare the hash-pinned UCI Sentiment Labelled Sentences
-dataset (CC BY 4.0), train on the bounded CPU profile, and evaluate the frozen export:
+dataset (CC BY 4.0), train with the small CPU profile, and evaluate the frozen export:
 
 ```bash
 uv sync --locked --extra custom
@@ -168,9 +170,9 @@ weights reproduce exactly. Configuration examples are in `configs/custom.env`.
 See the [custom model card](docs/models/CUSTOM_SENTIMENT.md) for the split recipe,
 architecture, exact hashes, measured hardware, quality limits, and reproduction.
 
-## Benchmark smoke
+## Quick benchmark check
 
-M4 includes the full repeated CPU matrix. This shorter command verifies the driver:
+To check the benchmark driver with the fake adapter:
 
 ```bash
 uv run --extra benchmark python -m benchmarks.experiment \
@@ -178,16 +180,15 @@ uv run --extra benchmark python -m benchmarks.experiment \
   --output artifacts/benchmark-smoke.json
 ```
 
-This is a short correctness smoke. See the [benchmark methodology](docs/BENCHMARKS.md)
-for measured-run settings and the [operating guide](docs/OPERATIONS.md) for CPU
-Docker commands, CI coverage, and a real-model overload demo.
+The [benchmark report](docs/BENCHMARKS.md) covers the full experiment settings and
+results. The [operating guide](docs/OPERATIONS.md) covers CPU Docker commands, CI,
+and the real-model overload demo.
 
-Benchmark commands will be documented when they exist. CPU is the
-verified baseline; CUDA behavior is implemented but has not been tested on this host.
+CPU has been tested. CUDA support is implemented but has not been tested on this host.
 
 ## Project documentation
 
-- [Work log](docs/WORK_LOG.md): every completed section and its verification.
+- [Work log](docs/WORK_LOG.md): development history and check results.
 - [Architecture](docs/ARCHITECTURE.md): contracts and request flow.
 - [Decisions](docs/DECISIONS.md): choices and their trade-offs.
 - [Learning notes](docs/LEARNING_NOTES.md): concepts behind each completed milestone.

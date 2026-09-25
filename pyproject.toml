@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ml-inference-service"
 version = "0.4.0"
-description = "Educational inference service with an incrementally built batching scheduler"
+description = "Text classification API with a custom batching scheduler"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [

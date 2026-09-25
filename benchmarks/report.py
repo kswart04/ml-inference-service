@@ -1,4 +1,4 @@
-"""Regenerate aggregate tables and standalone charts from completed experiment JSON."""
+"""Generate tables and charts from benchmark JSON files."""
 
 from __future__ import annotations
 

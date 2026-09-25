@@ -2,14 +2,14 @@
 
 ## D001 — Incremental scope and private repository (2026-09-06)
 
-**Decision:** use the owner's `kswart04/ml-inference-service` private repository
+**Decision:** use the private `kswart04/ml-inference-service` repository
 and complete M0 before beginning M1. Keep a section-by-section work log, architecture
 notes, and learning notes alongside the code.
 
-**Reason:** the requirements prioritize explainable engineering and verified
-milestones. A single large implementation would obscure correctness gates.
+**Reason:** separate milestones allow the API, scheduler, and models to be tested
+before adding the next part.
 
-**Consequence:** no real model downloads, training, benchmark claims, hosted
+**Consequence:** no real model downloads, training, benchmarks, hosted
 deployment, or public release in M0. Code license remains undecided. Git commit
 identity is configured only for this repository with GitHub's no-reply address.
 
@@ -19,14 +19,14 @@ identity is configured only for this repository with GitHub's no-reply address.
 `.python-version`, `pyproject.toml`, and `uv.lock`. Use Hatchling for the src package
 build and uv for environment management. Add ML dependencies in their own milestones.
 
-**Reason:** one explicit interpreter series keeps initial verification focused;
-the machine's default Python 3.14 is not automatically the project baseline.
+**Reason:** testing one Python version keeps setup predictable. The host runs
+Python 3.14, so the project needs its own interpreter.
 The fake adapter requires no PyTorch or model downloads.
 
 **Consequence:** supporting additional Python versions needs explicit testing.
 This choice does not establish compatibility of future PyTorch/CUDA dependency
 sets; verify and lock those during M2/M3. Normal setup uses `uv sync --locked` so
-manifest/lock drift fails visibly.
+setup fails if the manifest and lockfile disagree.
 
 Resolved M0 direct dependencies: FastAPI 0.141.1, Pydantic 2.13.5,
 pydantic-settings 2.15.0, Starlette 1.6.0, Uvicorn 0.52.4. Development tools:
@@ -45,7 +45,7 @@ predictions, and immutable identity structures. Use a fixed startup registry.
 version travels from lookup to response and will identify compatible batches.
 
 **Consequence:** v1 and v2 cannot accidentally resolve to the same key. The current
-sentiment schema intentionally does not claim support for other tasks. If future
+request schema supports sentiment classification only. If future
 request options affect compatibility, extend the key before accepting those options.
 
 ## D004 — Minimal fake execution before scheduling (2026-09-06)
@@ -54,8 +54,7 @@ request options affect compatibility, extend the key before accepting those opti
 input; use FastAPI lifespan for load and close. Implement bounded worker execution
 and all three scheduling policies together in M1.
 
-**Reason:** M0 establishes interfaces and an API without implicitly introducing an
-executor queue or prematurely claiming scheduler correctness.
+**Reason:** M0 establishes interfaces and an API before adding the executor and scheduler.
 
 **Consequence:** M0 is a local scaffold, unsuitable for real/slow inference. The
 single input path is not the implemented M1 single-item scheduling policy. Load,
@@ -63,9 +62,9 @@ preprocessing, and model forward passes must move off the event loop before real
 models are introduced.
 
 Reference: [FastAPI lifespan](https://fastapi.tiangolo.com/advanced/events/).
-For M1's shutdown design, Python documents that pending thread-pool work can keep
-the interpreter alive even when shutdown does not wait:
-[executor shutdown](https://docs.python.org/3/library/concurrent.futures.html#concurrent.futures.Executor.shutdown).
+For M1's shutdown design, Python documents that pending thread-pool work can
+keep the interpreter alive even when shutdown does not wait: [executor
+shutdown](https://docs.python.org/3/library/concurrent.futures.html#concurrent.futures.Executor.shutdown).
 
 ## D005 — Validate at the transport and adapter boundaries (2026-09-06)
 
@@ -76,7 +75,7 @@ error envelopes and server-generated IDs.
 **Reason:** byte size and character count bound different work. IDs identify one
 prediction attempt and must not imply retry deduplication.
 
-**Consequence:** error details deliberately omit raw submitted text and tracebacks.
+**Consequence:** error details omit raw submitted text and tracebacks.
 Token limits remain a separate real-adapter requirement for M2/M3. M1 adds
 structured logging, deadline timing, and per-model pending-capacity bounds.
 
@@ -98,8 +97,8 @@ shared GPU remain deferred because per-model limits do not bound device-wide wor
 expired, or cancelled. Worker threads return ordered values or errors; only event-loop
 code mutates envelopes and futures.
 
-**Reason:** one owner makes exactly-once terminal resolution and result correlation
-reviewable under timeout, disconnect, and batch failure races.
+**Reason:** one owner makes it easier to check result routing and prevent
+duplicate completion during timeout, disconnect, and batch failure races.
 
 **Consequence:** cancelling a running waiter never releases the execution slot.
 Late output is ignored. A thread blocked in native code cannot be terminated; the
@@ -126,9 +125,8 @@ protocol for every policy.
 five required files and writes their SHA-256 manifest. Runtime loads only the local
 directory with remote code, network lookup, and non-safetensors weights disabled.
 
-**Reason:** model acquisition is an operator action with visible provenance. It
-cannot be smuggled into an untrusted prediction request or silently change when a
-branch advances.
+**Reason:** operators choose and download the model before startup. Requests cannot
+change it, and pinning a commit prevents branch updates from changing the weights.
 
 **Consequence:** a fresh checkout must run preparation before selecting the adapter.
 The roughly 256 MiB artifact remains outside Git. Any file or preprocessing change
@@ -149,11 +147,12 @@ the fixed ceiling bounds tensor size. Startup validation prevents silent label i
 ## D011 — Optional ML dependencies and explicit model tests (2026-09-07)
 
 **Decision:** keep PyTorch, Transformers, and Hugging Face Hub in the `hf` optional
-extra. The default pytest gate excludes tests marked `model`; the explicit M2 gate
-runs them offline after artifact preparation.
+extra. The default pytest run excludes tests marked `model`; those tests run separately
+offline after artifact preparation.
 
-**Reason:** scheduler development and CI can remain fast and offline without hiding
-whether the real model was tested. Missing artifacts produce a setup-oriented skip.
+**Reason:** scheduler development and CI can remain fast and offline without
+hiding whether the real model was tested. Tests skip with setup instructions
+when artifacts are missing.
 
 **Consequence:** use `uv sync --locked --extra hf` and `pytest -m model` for M2.
 The verified CPU lock resolves PyTorch 2.14.0, Transformers 5.16.1, and Hub 1.30.0.
@@ -165,7 +164,7 @@ SHA-256, with its explicit CC BY 4.0 attribution. Use the standard library for t
 82 KB archive instead of adding a dataset framework.
 
 **Reason:** the requirements allow a public sentiment dataset such as IMDb. This
-source has clear licensing metadata and a bounded three-domain sentiment task.
+source has clear licensing metadata and a small sentiment dataset covering three domains.
 The proposed Python/FastAPI/PyTorch stack remains unchanged.
 
 **Consequence:** results describe this small sentence benchmark, not performance on
@@ -179,11 +178,11 @@ training rows only, select the checkpoint on validation macro-F1, and evaluate a
 immutable export with a separate test command. Provide small and full CPU profiles.
 
 **Reason:** test-based vocabulary fitting or checkpoint selection would make the
-held-out quality claim unreliable. Separate commands make the data boundary reviewable.
+held-out scores unreliable. Separate commands keep test data out of training.
 
-**Consequence:** output overwrite is refused. The reported test measurement is final
-for this configuration; it must not become a tuning target. A seven-point gap to
-validation is documented, not hidden by retraining after seeing test results.
+**Consequence:** output overwrite is refused. The reported test measurement is
+final for this configuration; it must not become a tuning target. The gap
+between validation and test accuracy is recorded in the model card.
 
 ## D014 — Shared model code and content-checked exports (2026-09-07)
 
@@ -191,7 +190,7 @@ validation is documented, not hidden by retraining after seeing test results.
 training and serving. Export safetensors, vocabulary, typed config, and provenance;
 derive the model version from the manifest's file hashes.
 
-**Reason:** training/serving preprocessing drift would invalidate reload evidence.
+**Reason:** training and serving must encode text the same way to reproduce predictions.
 Masking the pooling denominator is essential for predictions to remain stable when
 neighbors have different lengths. A strict manifest catches changed artifacts.
 
@@ -206,9 +205,9 @@ not establish authenticity of arbitrary untrusted exports. Paths remain operator
 record late/capacity drops, and reject server-capacity conclusions from client-invalid
 runs. Report successful latency and throughput with every outcome count.
 
-**Reason:** a closed-loop client silently reduces offered traffic when responses slow,
-and a saturated generator can look like server capacity. Failed requests cannot
-disappear behind successful-only percentiles.
+**Reason:** a closed-loop client silently reduces offered traffic when responses
+slow, and a saturated generator can look like server capacity. Latency
+percentiles for successful requests need error counts alongside them.
 
 **Consequence:** high custom-model loads may remain inconclusive even when the
 service produces no errors. Raw timings and invalid results are retained. The
@@ -225,7 +224,8 @@ Waiting can also increase latency for cheap models. A batching implementation is
 correct when it preserves results and lifecycle semantics, even if it loses on a
 particular workload.
 
-**Consequence:** the portfolio reports measured counterexamples and client limits.
+**Consequence:** the benchmark report includes cases where batching was slower
+and runs where the client fell behind.
 Length-aware grouping remains an optional extension with a separate fairness design.
 
 ## D017 — CPU container and clean optional-dependency checks (2026-09-07)

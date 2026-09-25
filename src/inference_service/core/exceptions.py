@@ -23,4 +23,4 @@ class AdapterContractError(SchedulerError):
 
 
 class FatalWorkerError(Exception):
-    """Adapter signal that its execution resource is no longer usable."""
+    """The adapter cannot continue serving; restart the process."""

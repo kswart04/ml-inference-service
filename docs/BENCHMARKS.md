@@ -1,11 +1,11 @@
 # CPU serving experiments
 
-## Scope and measurement contract
+## Setup
 
-These experiments compare the three implemented policies on the two prepared real
-models. Model quality is evaluated separately in the model cards. This is one
-developer workstation and a deliberately mixed-length synthetic workload, not a
-claim about all sentiment traffic or every CPU. There is no response cache.
+These experiments compare the three implemented policies on the two prepared
+real models. Model quality is evaluated separately in the model cards. All runs
+used one developer workstation and synthetic inputs of mixed lengths. Response
+caching was disabled.
 
 The baseline matrix uses batch cap 8, timed window 5 ms, pending capacity 32,
 server deadline 2 seconds, and client timeout 5 seconds. Single-item mode always
@@ -26,13 +26,14 @@ They range from a short sentiment word to repeated review sentences crossing the
 maximum length, and longest-item padding. Exact strings and character lengths are
 recorded in every completed report. This corpus measures serving behavior, not quality.
 
-The client uses absolute intended arrival times. It does not wait for one response
-before scheduling the next request. It permits at most 256 outstanding tasks and
-256 HTTP connections. An arrival more than 100 ms late is recorded as a client
-late drop; a full client budget causes a client capacity drop. Neither is silently
-rescheduled. Each raw record includes intended/send/completion times, scheduling
-lag, outcome, and HTTP duration. Burst traffic compresses each half-second's
-arrivals into the first 100 ms, preserving the exact intended count at 5× on-rate.
+The client uses absolute intended arrival times. It does not wait for one
+response before scheduling the next request. It permits at most 256 outstanding
+tasks and 256 HTTP connections. An arrival more than 100 ms late is recorded as
+a client late drop; a full client budget causes a client capacity drop. Dropped
+arrivals are not rescheduled. Each raw record includes intended/send/completion
+times, scheduling lag, outcome, and HTTP duration. Burst traffic compresses each
+half-second's arrivals into the first 100 ms, preserving the exact intended
+count at 5× on-rate.
 
 A run is **client-invalid** if any client drop occurs or p99 scheduling lag exceeds
 20 ms. Such runs remain visible in charts and tables but cannot establish server
@@ -43,7 +44,7 @@ multithreaded server can exceed 100%.
 Warmup sends two groups of eight requests and is excluded. Loading and download
 time are excluded. Each run drains its HTTP tasks and then waits for pending/active
 server work to clear, so timed-out native work cannot contaminate the next run.
-Residual work that cannot drain causes the experiment to fail visibly.
+The experiment fails if server work does not drain.
 
 ## Pilot and frozen target
 
@@ -52,9 +53,9 @@ mode handled low loads, while high load produced 429 responses. Padding mixed in
 lengths caused batching to reduce capacity in some pilot conditions. The custom
 model's highest pilot saturated the client, which was recorded as invalid.
 
-After those pilots and before comparative measurements, froze this project target:
+The pilots informed the target used for all subsequent comparisons:
 **successful-response p95 ≤ 100 ms and unsuccessful intended arrivals ≤ 1%, with a
-valid client**. This is a project target, not an external SLA or universal recommendation.
+valid client**. This target applies only to these experiments.
 `configs/benchmark.json` records the target, rate selections, and other frozen settings.
 
 The steady matrix uses three 60-second repetitions for every model/policy/rate:
@@ -64,13 +65,14 @@ The steady matrix uses three 60-second repetitions for every model/policy/rate:
 | Custom | 200 req/s | 800 req/s | 1,600 req/s |
 | DistilBERT | 20 req/s | 80 req/s | 160 req/s |
 
-These are pilot-selected load categories, not promises that each policy has the same
-capacity. Burst checks use three 15-second repetitions, paired with steady traffic
-at the same mean rate (custom 800, DistilBERT 80). Their shorter durations demonstrate
-transient behavior and are not equivalent to a long sustained-capacity experiment.
-Policies run sequentially in single/immediate/timed order; repetition and rate
-order are recorded. Thermal drift and other activity on a shared workstation can
-affect measurements. They are not randomized trials on isolated hardware.
+The rate categories come from the pilots; capacity varies by policy. Burst
+checks use three 15-second repetitions, paired with steady traffic at the same
+mean rate (custom 800, DistilBERT 80). Their shorter durations demonstrate
+transient behavior and are not equivalent to a long sustained-capacity
+experiment. Policies run sequentially in single/immediate/timed order;
+repetition and rate order are recorded. Thermal drift and other activity on a
+shared workstation can affect measurements. They are not randomized trials on
+isolated hardware.
 
 ## Reproduction
 
@@ -91,8 +93,8 @@ uv run --no-sync python -m benchmarks.experiment --adapter custom \
 Each output must be new. The runner starts/stops its own local server on port 8765;
 stop any other server on that port first. Do not run the two models' experiments
 simultaneously on this host. Allow about an hour for this matrix, plus preparation.
-For a quick correctness smoke use a fresh output path, `--duration 2 --repetitions 1`
-and `--adapter fake --rates 50`. Short smoke output is not performance evidence.
+For a quick driver check use a fresh output path, `--duration 2 --repetitions 1`
+and `--adapter fake --rates 50`. Use the longer runs for performance comparisons.
 
 Regenerate tables and standalone SVG/PNG plots from completed reports:
 
@@ -120,12 +122,11 @@ it is not interchangeable with forward-pass time. Mean forward duration is per
 batch, while queue wait is per request. A longer batch forward can serve several
 requests, so compare throughput and constraints together.
 
-An overloaded server may appear fast if one only averages its quickly rejected
-requests, or may appear successful if errors are excluded entirely. The report
-therefore shows successful-only latency **alongside all outcomes and invalid-client
-flags**. The target must hold in every repetition to be marked met.
+Fast rejections can lower average latency while useful throughput falls. The report
+shows latency for successful requests, counts for every outcome, and client-validity
+flags. The target must hold in every repetition to be marked met.
 
-## Completed DistilBERT findings
+## DistilBERT results
 
 For the baseline snapshot, single-item mode met the target in all three repetitions
 at both 20 and 80 requests/sec. At 80 requests/sec it completed 80.0 successful
@@ -149,27 +150,28 @@ timed/160 interval). They are retained and marked client-invalid. The single-ite
 and immediate/160 comparisons above use valid clients; no capacity claim is made
 from those invalid intervals.
 
-## Completed custom-model findings
+## Custom-model results
 
-At 200 requests/sec, immediate and timed policies met the target in all three runs.
-Single-item throughput/latency was similar, but one run had 26 late client drops and
-is therefore not a clean all-repetition result. At 800 requests/sec, both single and
-immediate completed all 144,000 intended arrivals across three repetitions with
-mean per-run p95 of 1.15 ms and 1.12 ms respectively. Their observed mean batch size
-was 1.0: arrivals were handled quickly enough that immediate queue snapshots rarely
-contained neighbors. This is strong evidence for the service at that exact load and
-client, but the rate selection did not locate an upper server-capacity boundary.
+At 200 requests/sec, immediate and timed policies met the target in all three
+runs. Single-item throughput/latency was similar, but one run had 26 late client
+drops and is therefore not a clean all-repetition result. At 800 requests/sec,
+both single and immediate completed all 144,000 intended arrivals across three
+repetitions with mean per-run p95 of 1.15 ms and 1.12 ms respectively. Their
+observed mean batch size was 1.0: arrivals were handled quickly enough that
+immediate queue snapshots rarely contained neighbors. The server kept up at this
+rate, but these runs did not locate its capacity limit.
 
-The timed policy at 800 requests/sec formed mean batches of 3.61, yet all runs were
-client-invalid and only 62.79% of intended arrivals succeeded. The server used less
-CPU, while system/client scheduling fell behind. Because both processes share the
-same workstation, this does not establish a timed-policy server limit or prove the
-cause. It does show that larger batches and lower reported server CPU alone are not
-a useful success criterion.
+The timed policy at 800 requests/sec formed mean batches of 3.61, yet all runs
+were client-invalid and only 62.79% of intended arrivals succeeded. The server
+used less CPU, while system/client scheduling fell behind. Because both
+processes share the same workstation, this does not establish a timed-policy
+server limit or prove the cause. Larger batches and lower server CPU did not
+translate into more successful requests.
 
 All custom runs at 1,600 requests/sec saturated the client budget, across every
-policy. They are retained as load-generator-limit evidence. They cannot establish
-whether the server could have accepted a different client implementation at that rate.
+policy. The reports retain those runs to show where the load generator fell
+behind. They cannot establish whether the server could have accepted a different
+client implementation at that rate.
 
 ## Burst findings
 
@@ -186,7 +188,7 @@ most paired 15-second steady controls. They show that this same-host client cann
 generate that burst schedule reliably and support no server comparison. The valid
 60-second steady custom results above remain the applicable evidence.
 
-## Final results and limitations
+## Reports and limitations
 
 The [steady table](results/benchmark/table.md) and
 [steady chart](results/benchmark/cpu-comparison.svg) contain all 54 repeated steady
@@ -208,12 +210,11 @@ lengths are in [workload.json](results/workload.json). Server RSS ranged by mode
 policy; detailed peaks and process CPU samples are in `summary.json`. Process CPU
 is observational on a shared host and was not normalized into a cross-machine score.
 
-The evidence supports one practical conclusion: choose the policy from measurements
-for the actual model, lengths, device, rate, and latency/error target. On this CPU and
-mixed-length sequence, batching did not improve the demonstrated DistilBERT capacity.
-Timed collection was also unnecessary for the very cheap custom model at the valid
-800 requests/sec steady rate. Length-aware grouping is a reasonable next experiment,
-provided it adds starvation protection and repeats the same validity checks.
+On this CPU and mixed-length sequence, batching did not improve DistilBERT
+capacity. Timed collection was also unnecessary for the very cheap custom model
+at the valid 800 requests/sec steady rate. A follow-up experiment could group
+requests by length, with starvation protection and the same client-validity
+checks.
 
 The experiment reports fingerprint all benchmark/service Python sources, lockfile,
 model manifest, workload, and hardware. The runner originally sampled Git HEAD at

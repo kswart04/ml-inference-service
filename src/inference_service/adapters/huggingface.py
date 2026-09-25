@@ -37,7 +37,7 @@ def _sha256(path: Path) -> str:
 
 
 class HuggingFaceSentimentAdapter:
-    """Pinned DistilBERT SST-2 adapter loaded exclusively from local artifacts."""
+    """Load the pinned DistilBERT SST-2 model from local files."""
 
     def __init__(
         self,

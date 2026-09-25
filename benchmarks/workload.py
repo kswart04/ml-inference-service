@@ -1,4 +1,4 @@
-"""Describe the exact prepared-token lengths used by the benchmark corpus."""
+"""Measure benchmark input lengths with each prepared tokenizer."""
 
 import argparse
 import json

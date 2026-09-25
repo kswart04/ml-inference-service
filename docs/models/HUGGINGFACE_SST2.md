@@ -12,10 +12,11 @@
 | Upstream license | Apache-2.0 |
 | Framework | PyTorch through Transformers |
 
-The source [model card](https://huggingface.co/distilbert/distilbert-base-uncased-finetuned-sst-2-english)
-reports its own evaluation and limitations. This project did not reproduce those
-quality metrics in M2 and does not claim them as local results. The model card notes
-that examples can produce biased predictions; review it before downstream use.
+The source [model
+card](https://huggingface.co/distilbert/distilbert-base-uncased-finetuned-sst-2-english)
+reports upstream evaluation results and limitations. Those quality measurements
+have not been repeated here. The model card notes that examples can produce
+biased predictions; review it before downstream use.
 
 ## Preparation and integrity
 
@@ -30,9 +31,7 @@ The adapter refuses missing, changed, or wrongly identified files. It calls
 `trust_remote_code=False`, and `use_safetensors=True`. Prediction requests cannot
 provide a repository, revision, path, URL, or remote-code option.
 
-Local artifact hashes from the verified M2 preparation are intentionally not
-committed because the artifact directory is ignored. The generated manifest for
-the pinned files recorded:
+The artifact directory is ignored by Git. Its generated manifest recorded these hashes:
 
 | File | SHA-256 |
 | --- | --- |
@@ -65,11 +64,11 @@ memory becomes a fatal worker signal and requires restart.
 
 M2 tests compare single-item predictions with predictions beside substantially
 different input lengths. Labels match and both scores use absolute tolerance
-`1e-6`. Instrumentation proves a three-item adapter batch and three independent
+`1e-6`. Forward-call counters check that a three-item adapter batch and three independent
 HTTP requests each use one model forward call. Two newly constructed adapters load
 with Hugging Face offline flags and reproduce the same prediction within `1e-8`.
 
-This model targets SST-2 English sentiment. It is not a universal classifier, and
-raw comparison with the later IMDb-trained custom model would confound dataset,
-architecture, and training differences. M2 contains correctness observations, not
-throughput benchmarks or a new quality evaluation.
+This model targets English sentiment from SST-2. The custom model was trained on
+UCI sentences from Amazon, IMDb, and Yelp, so comparing their raw accuracy would
+mix dataset and architecture differences. This card covers loading and prediction
+checks; serving benchmarks are in [BENCHMARKS.md](../BENCHMARKS.md).

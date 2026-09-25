@@ -1,5 +1,7 @@
 # Learning notes
 
+Notes from each milestone, in development order.
+
 ## M0 — Contracts before scheduling
 
 Read `core/contracts.py`, then `adapters/protocol.py`, then `api/app.py`.
@@ -7,12 +9,12 @@ The API knows which model identity was requested. The adapter knows how to
 interpret text and produce results. The future scheduler will know when compatible
 requests should execute; it will not know the neural network architecture.
 
-Three design decisions to understand before M1:
+The scheduler design rests on three details:
 
 1. **Execution ownership:** `async def` does not make synchronous code nonblocking.
    Real tokenization and model calls would occupy the event-loop thread, delaying
    health checks and deadlines. M1 moves those calls to a dedicated bounded worker.
-   The current fake is intentionally small and temporary.
+   The fake adapter is cheap enough to run inline during M0.
 2. **Request lifetime versus execution lifetime:** timing out a client cannot
    safely interrupt a native thread already running inference. Keep the execution
    slot occupied until the worker finishes; otherwise the next batch could overlap
@@ -22,7 +24,7 @@ Three design decisions to understand before M1:
    count, and resolve futures only on the event loop. Never route results by the
    order in which HTTP clients finish, or combine different model versions.
 
-## Questions the experiments must answer later
+## What batching measurements need to show
 
 Batching can improve utilization while increasing time spent waiting. Report
 throughput together with latency, timeouts, and rejections. Compare policies within
@@ -63,7 +65,7 @@ execute repository-provided Python.
 The scheduler still sees only `TextInput`, compatibility identity, and ordered
 `Prediction` values. The adapter turns all texts into one rectangular tensor batch,
 runs one forward call, then converts each logits row back into the same position.
-This is the concrete proof that model integration did not change scheduling code.
+No scheduling changes are needed to add this adapter.
 
 Padding affects numeric operations, so parity means scores agree within a declared
 tolerance rather than requiring identical bits. Testing short text beside long text
@@ -89,11 +91,11 @@ offline and reproduced predictions; variable-length batching preserved scores to
 `1e-6`. The manifest includes run provenance, so identical weights do not imply an
 identical version when the recorded run timing differs.
 
-Passing the majority baseline is a minimum quality gate, not a claim of a strong
-sentiment system. The test confusion matrix exposes 103 missed positive examples,
-and test accuracy falls below validation. Documenting that gap is more useful than
-repeatedly tuning against the same test set. Serving latency and throughput still
-need separate M4 experiments.
+The classifier beats the majority baseline but still makes many mistakes. The
+test confusion matrix exposes 103 missed positive examples, and test accuracy
+falls below validation. Further tuning against these test results would weaken
+the held-out evaluation. Serving latency and throughput are measured separately
+in M4.
 
 ## M4 — Treat the experiment client as part of the measurement
 
@@ -105,16 +107,14 @@ report how late it sent and whether it ran out of its own outstanding budget.
 The timed window bounds deliberate collection, not response latency. Queue wait,
 tokenization, model computation, and network overhead all contribute. A full batch
 can have worse CPU cost when one long sentence forces many short sentences to pad
-to 256 tokens. This explains why batching should be measured instead of assumed
-to improve performance.
+to 256 tokens. The extra padding work can outweigh the benefit of batching.
 
 Rejections and client drops mean different things. HTTP 429 demonstrates the
 server's admission rule; a client capacity drop means the generator never sent
-that arrival. Neither should vanish from the denominator. A low latency percentile
+that arrival. Count both as unsuccessful intended arrivals. A low latency percentile
 for successful requests is only useful alongside those failures and the offered rate.
 
 Clean optional environments matter too: a dependency installed for Transformers
 can mask a missing dependency in custom-only training. A container also runs under
 a different UID, so a valid local artifact can still fail on file permissions.
-CI now exercises these boundaries directly rather than treating a Dockerfile as
-proof that the container works.
+CI tests custom-only installation and HTTP predictions inside the container.

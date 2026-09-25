@@ -6,7 +6,7 @@ from inference_service.core.contracts import ModelKey, ModelMetadata
 
 
 class ModelRegistry:
-    """Fixed at construction; request callers cannot select arbitrary artifacts."""
+    """Look up model versions registered at startup."""
 
     def __init__(self, adapters: Sequence[ModelAdapter]) -> None:
         entries: dict[ModelKey, ModelAdapter] = {}

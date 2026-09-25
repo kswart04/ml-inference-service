@@ -1,4 +1,4 @@
-"""Launch one local server per policy and retain reproducible experiment evidence."""
+"""Run each scheduling policy in a local server and save benchmark results."""
 
 from __future__ import annotations
 

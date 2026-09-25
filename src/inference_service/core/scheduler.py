@@ -36,7 +36,7 @@ class SchedulerConfig:
 
 
 class ModelScheduler:
-    """One event-loop-owned queue and one bounded execution slot for an adapter."""
+    """Queue requests on the event loop and run one adapter batch at a time."""
 
     def __init__(
         self,
@@ -361,5 +361,5 @@ class ModelScheduler:
         if not self._abandoned_worker:
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(self._executor, self.adapter.close)
-        # An abandoned native call cannot be killed. Avoid blocking event-loop shutdown.
+        # Do not wait for a stuck native call during event-loop shutdown.
         self._executor.shutdown(wait=False, cancel_futures=True)

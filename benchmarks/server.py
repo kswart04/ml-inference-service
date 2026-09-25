@@ -1,4 +1,4 @@
-"""Single-process server with explicit CPU thread settings for experiments."""
+"""Run a benchmark server with fixed CPU thread counts."""
 
 import os
 

@@ -11,7 +11,7 @@ from inference_service.core.contracts import (
 
 
 class ModelAdapter(Protocol):
-    """Blocking contract: real adapters will be invoked in M1's execution thread.
+    """Adapter interface. Load, prediction, and close run on the scheduler worker thread.
 
     predict_batch returns one ordered result per input. Real model adapters must
     execute one batched forward pass. The fake adapter has no neural network.

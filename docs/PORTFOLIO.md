@@ -1,10 +1,9 @@
-# Portfolio evidence and limits
+# Project overview
 
-The repository remains private. “Release” here means a documented, tested local
-project; it does not imply a public hosted service, registry publication, or a
-repository license selected on the owner's behalf.
+A local inference service with a custom scheduler, two sentiment models, and CPU
+benchmarks. The repository is private, with no hosted deployment or code license.
 
-## Claims supported by implementation
+## Implemented
 
 - Implemented a FastAPI inference service with a custom bounded batching scheduler,
   single-item/immediate/timed policies, deadlines, queue rejection, cancellation,
@@ -13,8 +12,8 @@ repository license selected on the owner's behalf.
   contract: pinned DistilBERT and a PyTorch embedding/masked-mean classifier trained
   locally from initialization. Model integration did not require scheduler changes.
 - Achieved 68.82% held-out accuracy and 0.6811 macro-F1 on the documented UCI sentence
-  split, above a 50.11% training-majority accuracy baseline. This is a modest
-  educational classifier, not a state-of-the-art sentiment result.
+  split, above a 50.11% training-majority accuracy baseline. The model card
+  includes the confusion matrix and validation/test gap.
 - Verified fresh-process artifact reload, mixed-length single/batch parity, and
   independent HTTP requests sharing one forward pass.
 - Built an open-loop CPU experiment driver that retains scheduling lag, client
@@ -22,17 +21,17 @@ repository license selected on the owner's behalf.
 - Added CI and non-root CPU container operation, including a read-only custom-model
   mount and real HTTP prediction checks.
 
-Final benchmark findings belong in [BENCHMARKS.md](BENCHMARKS.md), with exact source
-revisions and measurement files. Do not convert a client-invalid load attempt into
-a server-capacity claim or describe a pilot as the repeated comparison.
+Results, source revisions, and measurement files are in
+[BENCHMARKS.md](BENCHMARKS.md). Runs where the load generator fell behind are marked
+invalid for server-capacity comparisons.
 
-## Claims this project does not support
+## Limitations
 
-No universal model compatibility, exactly-once delivery, automatic native-hang
-recovery, measured GPU speedup, production availability/SLA, distributed serving,
-authentication, autoscaling, or public deployment is implemented or demonstrated.
-There is no requirement to claim a throughput improvement: batching can lose on
-this mixed-length CPU workload.
+Only the documented adapters are supported. Retries create new requests, and a hung
+native call requires a process restart. GPU performance and production availability
+have not been measured. Distributed serving, authentication, autoscaling, and public
+deployment are outside the current scope. Batching was slower in several of the
+mixed-length CPU experiments.
 
 ## Interview walkthrough
 
@@ -47,4 +46,4 @@ this mixed-length CPU workload.
 5. Run the short overload demo. Distinguish HTTP 429 from client drops and inspect
    unsuccessful outcomes alongside successful latency.
 6. Explain a measured batching counterexample before proposing length-aware grouping.
-   Such an extension also needs fairness/starvation rules, not just faster averages.
+   Length grouping would also need a rule to prevent long requests from starving.

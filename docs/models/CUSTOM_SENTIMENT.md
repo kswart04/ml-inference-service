@@ -1,24 +1,24 @@
-# Custom sentiment classifier — M3 model card
+# Custom sentiment classifier
 
 This is a small English binary-sentiment classifier trained locally from random
-initialization, with no pretrained embeddings or weights. It demonstrates artifact
-reproducibility and reuse of the scheduler across architectures. It is an educational
-baseline, with substantial errors on held-out sentences.
+initialization, with no pretrained embeddings or weights. It uses the same
+scheduler as DistilBERT and serves as a small CPU baseline. Held-out accuracy is
+68.82%; the errors are broken down below.
 
 ## Dataset, attribution, and split
 
-Source: Dimitrios Kotzias (2015), *Sentiment Labelled Sentences*, UCI Machine Learning
-Repository, DOI [10.24432/C57604](https://doi.org/10.24432/C57604).
-The [official dataset card](https://archive.ics.uci.edu/dataset/331/sentiment+labelled+sentences)
-identifies the dataset as CC BY 4.0. Attribution is retained here and in the local
-dataset manifest. Associated paper: Kotzias, Denil, de Freitas, and Smyth,
+Source: Dimitrios Kotzias (2015), *Sentiment Labelled Sentences*, UCI Machine
+Learning Repository, DOI [10.24432/C57604](https://doi.org/10.24432/C57604). The
+[official dataset
+card](https://archive.ics.uci.edu/dataset/331/sentiment+labelled+sentences)
+identifies the dataset as CC BY 4.0. Attribution is retained here and in the
+local dataset manifest. Associated paper: Kotzias, Denil, de Freitas, and Smyth,
 *From Group to Individual Labels Using Deep Features*, KDD 2015.
 
 The official archive contains 1,000 sentences each from Amazon product reviews,
 IMDb movie reviews, and Yelp restaurant reviews; each source has 500 examples per
 class. This is UCI's sentence benchmark, not the Stanford 50,000-review IMDb dataset.
-The requirements permit a public sentiment dataset “such as IMDb.” UCI was selected
-because its dataset card states a license explicitly and its size bounds CPU work.
+UCI was selected for its stated license and small size, which keeps CPU training short.
 
 Archive URL:
 `https://archive.ics.uci.edu/static/public/331/sentiment+labelled+sentences.zip`
@@ -45,19 +45,20 @@ with that same RNG. IDs preserve source filename and original line number.
 | Validation | 223 | 223 | 446 |
 | Held-out test | 225 | 224 | 449 |
 
-The small profile deterministically samples 200 rows per domain/label stratum from
-training with seed 42. Vocabulary fitting uses **only these selected training rows**.
-Preparation reads the original unsplit corpus to create partitions; training reads
-only train and validation files, with their manifest hashes verified. No test text
-is used to construct vocabulary, select an epoch, or tune a hyperparameter. Final
-evaluation opens the test file after the export is frozen, verifies provenance and
-ID separation, and writes an evaluation record without changing model identity.
-Split file hashes and source distributions are in the [aggregate result](../results/custom-small.json).
+The small profile deterministically samples 200 rows per domain/label stratum
+from training with seed 42. Vocabulary fitting uses **only these selected
+training rows**. Preparation reads the original unsplit corpus to create
+partitions; training reads only train and validation files, with their manifest
+hashes verified. No test text is used to construct vocabulary, select an epoch,
+or tune a hyperparameter. Final evaluation opens the test file after the export
+is frozen, verifies provenance and ID separation, and writes an evaluation
+record without changing model identity. Split file hashes and source
+distributions are in the [aggregate result](../results/custom-small.json).
 
 ## Architecture and preprocessing
 
 - Lowercase, then extract ASCII words with optional internal apostrophes using
-  `[a-z]+(?:'[a-z]+)?`. This deliberately simple tokenizer drops numbers,
+  `[a-z]+(?:'[a-z]+)?`. This tokenizer drops numbers,
   punctuation, and non-ASCII characters; it does not interpret HTML or emoji.
 - Retain the first 256 tokens. Vocabulary is frequency-descending with alphabetic
   tie-breaking, capped at 10,000 including PAD=0 and UNK=1. Actual size: 2,923.
@@ -92,15 +93,15 @@ small run checked determinism without accessing test examples. No test-driven
 tuning was performed after seeing the results below.
 
 Hardware: Apple M5 Pro, 18 logical CPUs, 48 GiB RAM, macOS 26.6.2 arm64. Python
-3.12.14, PyTorch 2.14.0. No CUDA available; Apple MPS was not used. The first training
-function recorded **0.892 seconds**, including split reading, fitting, validation,
-and weight/config export, but excluding interpreter/library imports, data download,
-and final provenance/manifest serialization. The second identical run recorded
-0.718 seconds under the same method.
-These are observed timings for this tiny dataset, not a duration guarantee or a
-serving throughput benchmark. Full package versions are pinned in `uv.lock`.
+3.12.14, PyTorch 2.14.0. No CUDA available; Apple MPS was not used. The first
+training function recorded **0.892 seconds**, including split reading, fitting,
+validation, and weight/config export, but excluding interpreter/library imports,
+data download, and final provenance/manifest serialization. The second identical
+run recorded 0.718 seconds under the same method. These timings cover training
+on this dataset; serving performance is measured separately. Full package
+versions are pinned in `uv.lock`.
 
-## Held-out results and release gate
+## Held-out results
 
 | Measurement | Accuracy | Macro-F1 |
 | --- | ---: | ---: |
@@ -119,7 +120,7 @@ Test confusion matrix (rows true, columns predicted; negative then positive):
 | True negative | 188 | 37 |
 | True positive | 103 | 121 |
 
-The M3 baseline gate passes, but the model misses many positive examples and test
+The model beats the majority baseline, but misses 103 positive examples. Test
 accuracy is 7.64 percentage points below validation. A small dataset and validation
 checkpoint selection limit confidence in generalization. Scores are not calibrated
 probabilities. Mean pooling discards word order, so negation and sarcasm are weak
@@ -129,7 +130,7 @@ sentences and near duplicates cannot be excluded by parent-review grouping.
 This evaluation is not a controlled quality comparison against DistilBERT, which
 was trained on a different dataset.
 
-## Artifact and reproduction contract
+## Artifacts and reproduction
 
 Default export: ignored `artifacts/custom-sentiment/`.
 
@@ -155,8 +156,8 @@ Two independent training processes produced identical SHA-256 values:
 | Vocabulary | `6579fb74de1ccf5ffefdd2d757a70cecfc8f56159ae76e1c2f03243b75179635` |
 | Configuration | `5d304e14a64de6ac2900dec7eb2b188e929f6af82b86b88c22fcef20eb652136` |
 
-This establishes reproducibility on this machine and lockfile; bitwise reproducibility
-across PyTorch releases, platforms, and devices is not promised. See PyTorch's
+These runs reproduced the same weights on this machine with the same lockfile.
+Other PyTorch releases, platforms, or devices may produce different weights. See PyTorch's
 [reproducibility guidance](https://docs.pytorch.org/docs/stable/notes/randomness.html).
 
 Follow the [README commands](../../README.md#train-and-serve-the-custom-model).
@@ -171,9 +172,8 @@ Serving validates the file allowlist, version, hashes, typed configuration,
 vocabulary, and exact tensor state. It never downloads a model. T12 compares mixed
 length single/batch predictions at absolute score tolerance `1e-6`; T16 starts a
 new Python process in a different working directory, blocks socket connections,
-loads the export, and reproduces predictions at `1e-6`. A separate HTTP test proves
+loads the export, and reproduces predictions at `1e-6`. A separate HTTP test checks that
 three independent requests share one custom forward pass with correct correlation.
 The scheduler core has no M3 changes.
 
-Data licensing does not select this repository's code license. No claim is made
-that the trained weights have a separately owner-approved distribution license.
+The code and trained weights do not yet have separate distribution licenses.

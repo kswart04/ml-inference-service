@@ -1,18 +1,18 @@
 # ML Inference Service with Dynamic Batching
 
-Version: 1.0 • Prepared for Keanu Swart • 6 September 2026
+Original design, 6 September 2026. Development history is in [WORK_LOG.md](WORK_LOG.md).
 
-## 1. Purpose and intended outcome
+## 1. Purpose
 
-Build a small, well-tested inference backend that combines compatible online prediction requests into batches. Implement the scheduler yourself, support both a personally trained PyTorch model and a pretrained Hugging Face model, and demonstrate the relationship between batching, throughput, latency, and overload.
+Build a small, well-tested inference backend that combines compatible online prediction requests into batches. Use a custom scheduler with a PyTorch model trained from scratch and a pretrained Hugging Face model. Measure how batching affects throughput, latency, and overload.
 
-This is an educational portfolio project for software engineering and ML infrastructure roles. Its value is the engineering you can explain and verify: concurrency, bounded resource use, request lifecycle management, model integration, and reproducible experiments. It is not a claim to replace production inference servers.
+The project focuses on concurrency, bounded resource use, request lifecycles, model integration, and reproducible experiments.
 
-The final repository must let another developer install the project, run a demonstration, train the custom model, fetch the external model, run correctness tests, reproduce benchmarks, and inspect documented trade-offs. Never fabricate performance results or model quality metrics.
+Another developer should be able to install the service, run the demo, prepare both models, run tests, and reproduce the benchmarks from the repository instructions.
 
 ## 2. Scope and priorities
 
-MUST means required for the completed portfolio release. SHOULD means desirable after core correctness. MAY means optional extension. Milestones deliberately implement only subsets of the final scope.
+MUST marks a requirement, SHOULD a desirable addition, and MAY an optional extension. Each milestone implements part of the scope below.
 
 ### Required release scope
 
@@ -27,11 +27,11 @@ MUST means required for the completed portfolio release. SHOULD means desirable 
 - Reproducible model training and serving benchmarks, with separate reports for model quality and system performance.
 - Docker, CI, setup documentation, architecture decisions, and a demonstration script.
 
-### Explicitly deferred
+### Out of scope
 
-No Kubernetes, Kafka, Redis, PostgreSQL, accounts, billing, elaborate frontend, autoscaling, cloud provisioning, hot model swapping, streaming generation, arbitrary model uploads, or distributed worker recovery is required. Do not add these to satisfy imagined production requirements. An in-memory online service can provide the intended engineering depth.
+The initial service runs in memory. Kubernetes, Kafka, Redis, PostgreSQL, accounts, billing, a frontend, autoscaling, cloud provisioning, hot model swapping, streaming generation, arbitrary model uploads, and distributed worker recovery are out of scope.
 
-LLM token generation and continuous batching are out of scope. They involve requests completing at different generation steps and often managing KV caches; they need a different scheduling design. Image, audio, embeddings, and tabular adapters are possible future extensions, not supported claims for this release.
+LLM token generation and continuous batching are out of scope. They involve requests completing at different generation steps and often managing KV caches; they need a different scheduling design. Image, audio, embeddings, and tabular adapters are possible future extensions.
 
 ## 3. What model-agnostic means here
 
@@ -39,7 +39,7 @@ The scheduler MUST operate on request envelopes and adapter capabilities without
 
 This does not mean that any downloaded model works automatically. A supported model needs a compatible adapter, output schema, batching policy, device support, and sufficient memory. Different modalities need additional input schemas. Some models cannot batch usefully.
 
-Initially, support the same task across two architectures: binary text sentiment classification. This reduces interface complexity while proving that scheduling code is reusable. Do not describe this as verified support for every ML model.
+Initially, support the same task across two architectures: binary text sentiment classification. This keeps the interface small and tests scheduler reuse across two architectures.
 
 The two adapters MUST be tested through the same scheduler code. They may run in separate server sessions on limited hardware. Concurrent multi-model operation is optional; if enabled, models have isolated queues and version identities. Never mix their inputs into one batch.
 
@@ -47,7 +47,7 @@ The two adapters MUST be tested through the same scheduler code. They may run in
 
 Use Python, FastAPI, Pydantic, PyTorch, Transformers, pytest, an asynchronous HTTP client for load generation, and Prometheus-compatible metrics. Resolve compatible supported dependency versions at implementation time and commit a lockfile. Prefer uv if available. Document CPU and optional CUDA installation separately.
 
-Use one ASGI server process in the initial implementation. The asynchronous event loop owns queues, scheduler state, admission decisions, request futures, deadlines, and terminal-state transitions. Do not use multiple Uvicorn workers as a hidden scaling mechanism: each would have separate queues and model copies.
+Use one ASGI server process in the initial implementation. The asynchronous event loop owns queues, scheduler state, admission decisions, request futures, deadlines, and terminal-state transitions. Multiple Uvicorn workers would each have separate queues and model copies.
 
 Run blocking tokenization and model execution outside the event loop using a dedicated bounded executor. Start with a single execution thread and at most one submitted/running batch per configured adapter. Do not allow an executor's internal queue to become a second unbounded request queue. The model is loaded once, put in evaluation mode, and used under inference mode inside the execution thread.
 
@@ -55,7 +55,7 @@ On a shared GPU, default to one active model per server session. Concurrent mode
 
 The worker returns ordered results or a batch error. The event loop alone resolves client futures. Each submitted item has a unique server-generated request ID and a strong association with its future. Never rely on response completion order to identify the client.
 
-Trade-off: a thread cannot safely terminate a hung native model call. Request deadlines can free clients, but execution remains occupied. A stuck worker marks readiness false after a configured watchdog threshold; recovery requires a process restart. Hard worker termination and process supervision are extensions. Do not promise automatic recovery from native hangs in version one.
+Trade-off: a thread cannot safely terminate a hung native model call. Request deadlines can free clients, but execution remains occupied. A stuck worker marks readiness false after a configured watchdog threshold; recovery requires a process restart. Hard worker termination and automatic recovery require a process-based worker and supervisor, which are deferred.
 
 ## 5. Adapter contract
 
@@ -70,7 +70,7 @@ Define typed structures rather than passing arbitrary dictionaries throughout th
 | Predict batch | Prepare inputs, execute the model once for the batch, and return one result per input in the same order |
 | Close | Release resources during orderly shutdown |
 
-The batch method MUST perform one batched model forward pass, not a loop of independent forward passes masquerading as batching. Preprocessing loops may be necessary and are permitted.
+The batch method MUST perform one batched model forward pass, rather than one forward pass per input. Preprocessing loops may be necessary and are permitted.
 
 Text preprocessing MUST specify padding, truncation, maximum sequence length, attention masks where required, and label interpretation. Reject empty/whitespace-only inputs. Apply a byte-level HTTP body limit before parsing and a character limit before queue admission. Adapter maximum token length provides a separate bound on tensor size.
 
@@ -80,15 +80,15 @@ Load external models from an operator-controlled allowlist with a pinned revisio
 
 ## 6. Model plan
 
-### Model A: personally trained classifier
+### Model A: custom classifier
 
-Implement a compact PyTorch sentiment classifier: token embedding, masked mean pooling, a small hidden layer, and a two-class output. Train its weights from initialization rather than claiming a fine-tuned external model as a from-scratch model. A novel architecture is not required.
+Implement a compact PyTorch sentiment classifier: token embedding, masked mean pooling, a small hidden layer, and a two-class output. Initialize and train all weights locally, without pretrained embeddings.
 
 Use a documented public sentiment dataset such as IMDb, subject to verifying its dataset card, availability, and permitted use before download. Record its exact source/revision, split construction, sample counts, preprocessing, and seed. Fit vocabulary on training data only. Select hyperparameters using validation data. Keep test data untouched until final evaluation. Never use test samples to fit vocabulary or make tuning decisions.
 
-Provide a bounded training configuration suitable for initial CPU experimentation and a fuller configuration. Record actual wall time and hardware; do not promise a fixed training duration. Export weights, vocabulary, tokenizer settings, architecture configuration, label map, seed, artifact hash, and evaluation metrics. Keep large artifacts outside ordinary Git history with a reproducible retrieval or training procedure.
+Provide a bounded training configuration suitable for initial CPU experimentation and a fuller configuration. Record training wall time and hardware. Export weights, vocabulary, tokenizer settings, architecture configuration, label map, seed, artifact hash, and evaluation metrics. Keep large artifacts outside ordinary Git history with a reproducible retrieval or training procedure.
 
-Report accuracy, macro F1, class distribution, and a majority-class baseline. A real release model should beat that baseline on held-out data; if it does not, report and investigate. Do not set an invented accuracy target or make training sophistication a prerequisite for building the server.
+Report accuracy, macro F1, class distribution, and a majority-class baseline. The trained model must beat the majority baseline on held-out data. If it falls short, investigate and record the result.
 
 ### Model B: Hugging Face pretrained classifier
 
@@ -96,7 +96,7 @@ Initial candidate: `distilbert/distilbert-base-uncased-finetuned-sst-2-english`.
 
 Use an explicit internal version tied to the resolved Hub commit and preprocessing configuration. Record source attribution. This model was trained for a different dataset/domain from an IMDb-trained custom classifier; do not treat raw accuracy differences as a controlled comparison of architecture quality.
 
-Benchmark scheduling policies within each model independently. Throughput differences between the two models do not measure batching improvement. The small custom model may show little or no benefit; that is a legitimate result.
+Benchmark scheduling policies within each model independently. Throughput differences between the two models do not measure batching improvement. The small custom model may show little or no benefit; report that result too.
 
 ### Development order
 
@@ -172,7 +172,7 @@ Start the deadline at handler entry, before admission. The body cap limits parsi
 
 If the oldest item already waited beyond the collection window while the worker was occupied, dispatch a partial batch as soon as the worker becomes free. Do not start a fresh full waiting window. Maximum collection delay is not a total queue-delay or response-time guarantee.
 
-Apply FIFO among compatible live requests. Remove expired/cancelled entries before forming batches. Do not submit a partial batch early merely to conceal a timeout risk; expire requests according to the contract and report those outcomes. Deadline-aware scheduling is a later policy extension.
+Apply FIFO among compatible live requests. Remove expired/cancelled entries before forming batches. Keep dispatch timing independent of deadlines; expire requests according to the contract and report those outcomes. Deadline-aware scheduling is a later policy extension.
 
 Keep all pending items, including items considered for a future batch, within the pending-capacity accounting. At most one active batch adds up to max_batch_size items beyond that bound. Preprocessing starts only for the active batch. Dead queue entries must be reclaimed promptly so cancellations cannot cause persistent false overload or growing tombstones.
 
@@ -184,7 +184,7 @@ Represent accepted requests as pending, running, succeeded, failed, expired, or 
 - Running timeout/disconnect: resolve or cancel the waiter and discard its eventual output. Other batch members must still receive correct outputs.
 - Native execution continues after a caller times out; do not free the execution slot early.
 - Batch exception: fail remaining live members and preserve scheduler health if the error is recoverable. Do not retry automatically in version one.
-- CUDA out-of-memory or unusable worker: fail the batch, mark unavailable, and require documented restart/recovery. Do not create a retry storm.
+- CUDA out-of-memory or unusable worker: fail the batch, mark unavailable, and require documented restart/recovery. Do not retry automatically.
 - Result-count mismatch: fail the batch as an adapter contract violation rather than misrouting outputs.
 
 Graceful shutdown stops admission, marks not ready, and allows accepted work to finish within the grace period and its existing deadlines. Afterwards fail remaining live waiters and exit under the process supervisor's bounded termination policy. A hung thread cannot be forcibly killed safely; document this limitation.
@@ -222,11 +222,11 @@ Use a controllable fake adapter and an injectable monotonic clock or synchroniza
 | T15 | Repeated success, cancellation, and timeout waves leave no orphan futures or queue growth |
 | T16 | A fresh process reloads custom exported artifacts and reproduces test predictions |
 
-Always run offline fake-adapter tests in CI. Make downloaded-model tests explicit, cached where appropriate, and separately marked. Missing artifacts must report a clear skip or setup failure, never silently pass as tested. No GPU is required for the default CI gate.
+Always run offline fake-adapter tests in CI. Make downloaded-model tests explicit, cached where appropriate, and separately marked. Tests with missing artifacts must report a skip or setup failure. No GPU is required for the default CI gate.
 
 ## 11. Benchmark design
 
-Correctness precedes optimization. No fixed throughput improvement is a release gate.
+The scheduler must pass the correctness tests before benchmarking. A throughput improvement is not required.
 
 Record Git commit, lockfile, OS, CPU, RAM, optional GPU and driver/runtime, device, thread counts, precision, model artifact revision/hash, tokenizer configuration, input-length distribution, scheduling settings, and client placement.
 
@@ -236,7 +236,7 @@ Start with a small pilot to determine sustainable arrival rates. Then evaluate b
 
 Use an open-loop arrival schedule for capacity and latency experiments: the intended arrival rate should not silently slow down when the server becomes slow. Bound client outstanding work, record intended arrivals, actual sends, scheduling lag, client-side drops, response outcomes, and final outstanding counts. A saturated client invalidates a server-capacity conclusion. Closed-loop concurrency tests may supplement the report but must be labeled separately.
 
-For each selected configuration, target three measured repetitions after warmup, initially about 60 seconds each if feasible. Extend only where sample counts or variability require it. Record exact durations. Report successful requests/sec, attempted load, p50/p95/p99 client latency for successful requests, timeout/rejection rates, queue wait, batch-size distribution, and resource use. Do not hide errors behind successful-only latency percentiles; report outcome counts and durations separately.
+For each selected configuration, target three measured repetitions after warmup, initially about 60 seconds each if feasible. Extend only where sample counts or variability require it. Record exact durations. Report successful requests/sec, attempted load, p50/p95/p99 client latency for successful requests, timeout/rejection rates, queue wait, batch-size distribution, and resource use. Report outcome counts and durations alongside latency percentiles for successful requests.
 
 Choose an explicit latency target after the baseline, freeze it for comparative experiments, and label it as a project target. A throughput gain is meaningful only alongside the same latency/error constraints. Report variability, input characteristics, and counterexamples where batching hurts. Separate model quality evaluation from serving performance. Retain raw compact result files and plotting scripts.
 
@@ -257,17 +257,17 @@ Use a src-based Python package. Suggested paths:
 - `scripts/`: explicit artifact preparation and demonstration entry points.
 - Root: README, pyproject, lockfile, Dockerfile, gitignore, CI workflow.
 
-README commands must be tested from a clean environment. Include quick start with fake adapter, real-model preparation, API request example, custom training, test suite, and a short benchmark. Provide CPU Docker operation first. Bind locally by default. Do not provision paid resources as part of setup.
+README commands must be tested from a clean environment. Include quick start with fake adapter, real-model preparation, API request example, custom training, test suite, and a short benchmark. Provide CPU Docker operation first. Bind locally by default. Setup must run locally without paid resources.
 
-Ignore environments, credentials, caches, raw datasets, large weights, and bulky benchmark traces. Keep small aggregate measurements and configuration needed to reproduce them. Record third-party licenses and attribution. Repository license selection remains an owner decision; do not assume model/data licenses match the code license.
+Ignore environments, credentials, caches, raw datasets, large weights, and bulky benchmark traces. Keep small aggregate measurements and configuration needed to reproduce them. Keep third-party attribution and record code, model, and dataset licenses separately. The code license is undecided.
 
 ## 13. Implementation milestones and completion gates
 
 ### M0 — Repository and contracts
 
-Inspect the existing folder and tools. Set up package configuration, README, test harness, typed request/result structures, adapter protocol, fake adapter, and a basic prediction/health API. Establish baseline lint/type/test commands. No real model download or training yet.
+Set up package configuration, README, test harness, typed request/result structures, adapter protocol, fake adapter, and a basic prediction/health API. Establish baseline lint/type/test commands. No real model download or training yet.
 
-Gate: service runs locally; a fake prediction and basic invalid-input tests pass; no claim of batching implementation. Document planned architecture and any dependency decisions.
+Gate: service runs locally; a fake prediction and basic invalid-input tests pass; batching is deferred to M1. Document planned architecture and any dependency decisions.
 
 ### M1 — Scheduler and bounded lifecycle
 
@@ -291,61 +291,13 @@ Gate: trained model beats documented trivial baseline; artifacts reload independ
 
 Run CPU baseline experiments and optional GPU runs. Produce reproducible results, charts, architecture decisions, Docker setup, CI, and a short demo including overload behavior.
 
-Gate: clean checkout instructions work; benchmarks include errors and hardware; resume claims are grounded in actual completed work. Label unimplemented extensions clearly.
+Gate: setup works from a clean checkout, and benchmark reports include hardware, errors, and enough detail to reproduce the measurements.
 
 ### Optional later work
 
 Length-aware batching with starvation protection; embeddings or image adapter; process-isolated worker with supervised recovery; authenticated hosted demo; multi-model resource scheduling; comparison with Ray Serve or Triton; adaptive waiting policies. Add one only after M4 is complete.
 
-## 14. Working with Codex in VS Code
-
-Save this file as `docs/REQUIREMENTS.md` in your local project folder. Codex can work locally before a GitHub remote exists. Use the official Codex IDE extension or its CLI from the VS Code terminal, subject to your installed setup and permissions.
-
-A local Git repository and a GitHub-hosted repository are separate. Codex can run Git commands and can use GitHub CLI to create a remote when `gh` is installed, authenticated to the correct account, and authorized. Authentication may require an interactive sign-in. Check account and existing remotes before creation. Do not overwrite an existing repository or invent its URL.
-
-Suggested remote name: `ml-inference-service`. Decide private/public explicitly. A private remote is a reasonable initial choice, followed by a deliberate public portfolio release. Do not treat this document alone as authorization to publish, push to an existing shared repository, or incur cloud costs.
-
-After an initial local commit and explicit authorization to create a private remote, a typical GitHub CLI command is:
-
-```bash
-gh repo create ml-inference-service --private --source=. --remote=origin --push
-```
-
-Use this only when the name is available, there is no conflicting origin, and authentication is established. Otherwise adapt to observed state. You can also create the repository on GitHub yourself and clone it before starting.
-
-### Initial coding prompt
-
-```text
-Read docs/REQUIREMENTS.md and inspect this workspace before changing files.
-Help me build this project incrementally so I understand the architecture.
-Implement milestone M0 only in this session.
-First explain the proposed file structure and the key interfaces briefly,
-then implement them and run the relevant checks.
-Do not implement dynamic batching, download models, or start training yet.
-Use a deterministic fake adapter for the initial API.
-Document the exact commands to run and test the service.
-At completion, explain what changed, what passed, what remains incomplete,
-and three design decisions I should understand before starting M1.
-Do not create a remote, push, publish, or provision paid infrastructure
-unless I explicitly request that action.
-```
-
-### Subsequent milestone prompt
-
-```text
-Read docs/REQUIREMENTS.md and the current implementation and tests.
-Implement milestone M1 only, preserving completed behavior.
-Explain queue ownership, request state transitions, and worker execution
-before the changes. Use the specification's acceptance tests as the gate.
-Do not substitute an existing serving framework for the custom scheduler.
-Run relevant checks and report evidence, limitations, and design decisions.
-```
-
-Change the milestone and relevant emphasis as development progresses. Codex should make routine implementation choices and document them; ask when a choice changes project scope, hardware requirements, or the stated contract. It must not mark a milestone complete when its acceptance gate fails.
-
-Keep a short decision log and learning notes. Before moving on, be able to explain why model execution cannot block the event loop, why a timeout cannot necessarily stop computation, how outputs stay correlated, and why throughput alone can be misleading. Do not request generation of the entire project in a single pass.
-
-## 15. Portfolio completion checklist
+## 14. Completion checklist
 
 - Both real models run through the same scheduling core.
 - Real batched forward passes, response routing, lifecycle tests, and overload behavior are demonstrated.
@@ -355,17 +307,15 @@ Keep a short decision log and learning notes. Before moving on, be able to expla
 - README works from a clean checkout; CI passes its documented offline gate.
 - A demo shows baseline versus batching and a controlled overload scenario.
 - Architecture decisions explain alternatives and limitations.
-- No claims of universal compatibility, exactly-once delivery, automatic hang recovery, or unmeasured speedups.
+- Supported adapters, retry behavior, worker recovery limits, and measured performance are documented.
 
-## 16. Primary references
+## 15. References
 
-These sources ground implementation concepts. The scope, defaults, architecture, and acceptance criteria above are project design decisions, not requirements imposed by these tools. Verify dependency-specific APIs when implementing.
+Background on tokenization and batching. Defaults and acceptance criteria above are specific to this project.
 
-- Codex IDE extension: https://developers.openai.com/codex/ide/
-- GitHub CLI repository creation: https://cli.github.com/manual/gh_repo_create
 - Hugging Face padding/truncation: https://huggingface.co/docs/transformers/main/pad_truncation
 - Initial pretrained model card: https://huggingface.co/distilbert/distilbert-base-uncased-finetuned-sst-2-english
 - NVIDIA Triton dynamic batcher, as a reference implementation: https://docs.nvidia.com/deeplearning/triton-inference-server/user-guide/docs/user_guide/batcher.html
 - Ray Serve batching, as a reference implementation: https://docs.ray.io/en/latest/serve/advanced-guides/dyn-req-batch.html
 
-Document status: requirements and proposed design only. No implementation, repository creation, model training, or benchmark results are represented as completed.
+This document records the original requirements. See [README.md](../README.md) for current setup and [WORK_LOG.md](WORK_LOG.md) for completed work.
